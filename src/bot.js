@@ -86,7 +86,7 @@ if (config.dryRun) {
 }
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
 try {
-  const ownId = String(api.ctx.uid ?? "");
+  const ownId = String((typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid) ?? "");
   const info = await api.getGroupInfo(config.groupIds);
   for (const groupId of config.groupIds) {
     const group = info?.gridInfoMap?.[groupId];
