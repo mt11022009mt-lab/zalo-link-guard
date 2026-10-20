@@ -1,5 +1,11 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.12.2: bổ sung nhận dạng ảnh và log chẩn đoán
+
+Bot nhận dạng thêm tin ảnh khi Zalo gửi loại tin chung nhưng dữ liệu đính kèm có `photoId`, `fileType: image` hoặc thông tin ảnh tương đương. GIF vẫn được cho phép nếu không có link cấm. Bot in `[BOT] phiên_bản=1.12.2` lúc chạy; khi dùng `--debug`, log cho biết tin có `cliMsgId` hay không, bot nhận dạng ảnh hay link, và quyết định xử lý. Nếu tin thiếu ID để xóa, bot ghi `[THIẾU ID]` kèm loại tin. Không cần gửi nội dung ảnh, QR hoặc phiên đăng nhập để chẩn đoán.
+
+Nếu ảnh vẫn lọt sau khi triển khai, đối chiếu **cùng ID tin** trong `[DEBUG]` với `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]`. Không có `[DEBUG]` nghĩa là listener/lịch sử không đưa tin đó tới bot; `ảnh=false` và `link=không_thấy` nghĩa là payload khác các dạng đã nhận; có lệnh xóa nhưng ảnh vẫn còn sau khi tải lại Zalo cần kiểm tra API và quyền xóa. Chỉ log của chính tin đó mới xác định được nhánh cần sửa tiếp.
+
 ## Bản 1.12.1: cho phép GIF
 
 GIF của thành viên thường được giữ lại. Bot vẫn chặn ảnh tĩnh và album ảnh; QTV vẫn được gửi ảnh. Nếu caption GIF có link bị cấm, quy tắc lọc link vẫn xử lý tin đó như trước.

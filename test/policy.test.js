@@ -72,6 +72,12 @@ test("blocks photos and albums without a link, while allowing GIFs without forbi
   assert.deepEqual(checkMessage(album, config), { links: [], image: true });
   assert.equal(checkMessage(gif, config), null);
   assert.equal(checkMessage(message({ description: "https://zalo.me/g/abc" }, "member", "group-1", "chat.gif"), config)?.links.length, 1);
+  assert.deepEqual(checkMessage(message({ params: JSON.stringify({ photoId: "12345", desc: "Ảnh thường" }) }, "member", "group-1", "webchat"), config), { links: [], image: true });
+  assert.deepEqual(checkMessage(message({ params: JSON.stringify({ photoId: "12345", desc: "https://zalo.me/g/abc" }) }, "member", "group-1", "webchat"), config)?.image, true);
+  assert.equal(checkMessage(message({ params: JSON.stringify({ photoId: "12345", desc: "https://zalo.me/g/abc" }) }, "member", "group-1", "webchat"), config)?.links.length, 1);
+  assert.equal(checkMessage(message({ params: JSON.stringify({ photoId: "12345" }) }, "member", "group-1", "chat.gif"), config), null);
+  assert.deepEqual(checkMessage(message({ type: "image", href: "https://cdn.example.com/p.jpg" }, "member", "group-1", "webchat"), config), { links: [], image: true });
+  assert.equal(checkMessage(message({ thumb: "https://cdn.example.com/p.jpg", title: "Trang web" }, "member", "group-1", "chat.link"), config), null);
   assert.equal(checkMessage(photoLink, config)?.links.length, 1);
   assert.equal(isImageMessage(message("text", "member", "group-1", "chat.sticker")), false);
   assert.equal(checkMessage(photo, { ...config, blockImages: false }), null);

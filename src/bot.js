@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { Zalo, ThreadType } from "zca-js";
 import { checkMessage, extractMessageLinks, isImageMessage } from "./policy.js";
@@ -9,6 +10,8 @@ import { loginWithSession } from "./session.js";
 import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
 
 const configPath = resolve(process.cwd(), "config.json");
+const { version } = createRequire(import.meta.url)("../package.json");
+console.log(`[BOT] phiên_bản=${version}`);
 const listingGroups = process.argv.includes("--list-groups");
 const debug = process.argv.includes("--debug");
 let config;
@@ -133,7 +136,7 @@ async function processMessage(message, { source = "live" } = {}) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
     const keys = content && typeof content === "object" ? Object.keys(content).slice(0, 12).join(",") : "-";
-    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} loại=${message.data?.msgType ?? "?"} ảnh=${isImageMessage(message)} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
+    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} cliMsgId=${message.data?.cliMsgId ? "có" : "thiếu"} loại=${message.data?.msgType ?? "?"} ảnh=${isImageMessage(message)} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
   }
   const result = checkMessage(message, config);
   if (!result) {
@@ -142,7 +145,7 @@ async function processMessage(message, { source = "live" } = {}) {
   }
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
-    console.warn("Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.");
+    console.warn(`[THIẾU ID] nguồn=${source} nhóm=${message.threadId} loại=${message.data?.msgType ?? "?"} msgId=${msgId ? "có" : "thiếu"} cliMsgId=${cliMsgId ? "có" : "thiếu"} uidFrom=${uidFrom ? "có" : "thiếu"}; bỏ qua để tránh xóa nhầm.`);
     return;
   }
   const reason = [result.image ? "ảnh" : null, result.links.length ? `link:${result.links.map((item) => item.hostname).join(",")}` : null]

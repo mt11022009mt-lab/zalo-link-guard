@@ -89,7 +89,30 @@ export function isZaloDomain(hostname) {
 
 export function isImageMessage(message) {
   const type = String(message?.data?.msgType ?? "").toLowerCase();
-  return ["chat.photo", "chat.album", "chat.image"].includes(type);
+  if (["chat.gif", "chat.sticker", "chat.video.msg", "chat.link", "chat.recommended"].includes(type)) return false;
+  if (/^(?:chat|share)\.(?:photo|album|image)(?:\.|$)/.test(type)) return true;
+
+  // Some Zalo image events use a generic msgType but still carry a photoId
+  // in the attachment payload. Keep the check limited to media metadata so a
+  // link preview's thumbnail URL does not become an "image message".
+  const seen = new WeakSet();
+  function hasPhotoMarker(value, depth = 0) {
+    if (depth > 5 || value == null) return false;
+    if (typeof value === "string") {
+      if (!/^\s*[\[{]/.test(value) || value.length > 100_000) return false;
+      try { return hasPhotoMarker(JSON.parse(value), depth + 1); } catch { return false; }
+    }
+    if (typeof value !== "object" || seen.has(value)) return false;
+    seen.add(value);
+    if (Array.isArray(value)) return value.slice(0, 20).some((item) => hasPhotoMarker(item, depth + 1));
+    if (value.photoId != null && String(value.photoId).trim() && String(value.photoId) !== "-1") return true;
+    if (String(value.fileType ?? "").toLowerCase() === "image") return true;
+    if (["photo", "image"].includes(String(value.type ?? "").toLowerCase())) return true;
+    if (value.rawUrl && value.thumbUrl && (value.width || value.height)) return true;
+    return ["params", "data", "payload", "attachment", "attachments", "items"].some((key) =>
+      hasPhotoMarker(value[key], depth + 1));
+  }
+  return hasPhotoMarker(message?.data?.content) || hasPhotoMarker(message?.data?.params);
 }
 
 export function checkMessage(message, config) {
