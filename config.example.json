@@ -1,0 +1,6 @@
+{
+  "groupIds": ["THAY_BANG_ID_NHOM"],
+  "trustedUserIds": [],
+  "allowedDomains": ["zalo.me"],
+  "dryRun": true
+}

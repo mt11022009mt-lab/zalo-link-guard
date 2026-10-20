@@ -1,0 +1,16 @@
+{
+  "name": "zalo-link-guard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "zca-js": "2.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
