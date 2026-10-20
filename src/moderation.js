@@ -150,6 +150,7 @@ export function createModeration({ api, config, state, log = console }) {
     const recorded = state.recordViolation({ groupId, userId, messageId, links: result.links, displayName });
     if (recorded.duplicate) return;
     await state.flush();
+    log.info(`[ĐẾM VI PHẠM] nhóm=${groupId} người_gửi=${userId} lượt=${recorded.count}/4 trong ${windowHours} giờ`);
     if (recorded.count <= 3) {
       const prefix = "⚠️ ";
       await groupNotice(groupId, {

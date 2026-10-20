@@ -25,6 +25,18 @@ test("STATE_DIR keeps counts after process restart", async () => {
   }
 });
 
+test("Render refuses an ephemeral counter before accepting violations", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "zalo-render-"));
+  try {
+    await assert.rejects(
+      createModerationState({ cwd: dir, env: { RENDER: "true" } }),
+      /DATABASE_URL|STATE_DIR/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("DATABASE_URL restores counts and rejects stale writers", async () => {
   const dir = mkdtempSync(join(tmpdir(), "zalo-db-"));
   let row;

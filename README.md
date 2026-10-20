@@ -1,5 +1,11 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.12.3: giữ bộ đếm vi phạm qua lần khởi động lại
+
+Trên Render, bot **dừng lúc khởi động** nếu chưa đặt `DATABASE_URL` hoặc `STATE_DIR`. Trước đây bot tiếp tục chạy với file cục bộ và âm thầm mất lượt vi phạm khi Render khởi động lại. Hãy cấu hình một nơi lưu bền vững theo hướng dẫn bên dưới **trước khi triển khai bản này**. Chỉ đặt `STATE_DIR` là chưa đủ: đường dẫn đó phải là mount path của Render Persistent Disk. Nếu không có nơi lưu, bot dừng và sẽ không lọc tin cho đến khi cấu hình xong.
+
+Lúc khởi động, log hiển thị loại lưu trữ và `đã_khôi_phục=N lượt còn hiệu lực`. Mỗi lần ghi thành công, log có dòng `[ĐẾM VI PHẠM]` với số lượt hiện tại. Nếu PostgreSQL lỗi ghi một lần rồi phục hồi, lần lưu tiếp theo có thể tiếp tục và ghi lại toàn bộ các lượt còn trong bộ nhớ. Những lượt đã mất trước khi có nơi lưu bền vững không thể tự khôi phục.
+
 ## Bản 1.12.2: bổ sung nhận dạng ảnh và log chẩn đoán
 
 Bot nhận dạng thêm tin ảnh khi Zalo gửi loại tin chung nhưng dữ liệu đính kèm có `photoId`, `fileType: image` hoặc thông tin ảnh tương đương. GIF vẫn được cho phép nếu không có link cấm. Bot in `[BOT] phiên_bản=1.12.2` lúc chạy; khi dùng `--debug`, log cho biết tin có `cliMsgId` hay không, bot nhận dạng ảnh hay link, và quyết định xử lý. Nếu tin thiếu ID để xóa, bot ghi `[THIẾU ID]` kèm loại tin. Không cần gửi nội dung ảnh, QR hoặc phiên đăng nhập để chẩn đoán.
@@ -25,7 +31,7 @@ Bot đọc thêm caption nằm trong `params`/`data.params` dạng JSON của ti
 1. **PostgreSQL:** tạo Render Postgres, sao chép **Internal Database URL** vào biến môi trường `DATABASE_URL` của dịch vụ bot, cùng vùng Render với dịch vụ. Bot tạo bảng `zalo_link_guard_state` và dùng lại dữ liệu sau mỗi lần khởi động. Giữ URL này riêng tư. Dùng một tiến trình bot cho một cơ sở dữ liệu; nếu hai tiến trình cùng ghi, bot sẽ từ chối ghi đè trạng thái cũ. [Cách tạo và kết nối Render Postgres](https://render.com/docs/postgresql-creating-connecting).
 2. **Ổ đĩa bền vững:** gắn Render Persistent Disk vào dịch vụ trả phí, ví dụ mount path `/var/data`, rồi đặt biến môi trường `STATE_DIR=/var/data`. Bot lưu `moderation-state.json` trên ổ này. Chỉ đặt biến `STATE_DIR` mà chưa gắn disk **không** bảo đảm dữ liệu còn sau khi restart. [Render Persistent Disks](https://render.com/docs/disks).
 
-Nếu có cả hai biến, bot ưu tiên `DATABASE_URL`. Khi chưa có cả hai, bot vẫn chạy và in cảnh báo `[LƯU VI PHẠM]`; file trên Render mặc định có thể mất khi restart/redeploy. Render Postgres gói miễn phí hết hạn sau 30 ngày, nên cần nâng cấp hoặc chuyển dữ liệu trước hạn nếu muốn lưu lâu dài. [Giới hạn gói miễn phí Render](https://render.com/docs/free). Sau khi deploy, tìm dòng `[LƯU VI PHẠM] PostgreSQL (DATABASE_URL)` hoặc `file trong STATE_DIR` trong log. Những lượt đã mất trước khi gắn nơi lưu bền vững không thể tự khôi phục; bot chỉ có thể nhập `moderation-state.json` cũ nếu file đó còn trong thư mục chạy lúc khởi động lần đầu với database/disk.
+Nếu có cả hai biến, bot ưu tiên `DATABASE_URL`. Khi chưa có cả hai, bản 1.12.3 dừng trên Render và báo lỗi `[LƯU VI PHẠM]`; chạy trên máy cá nhân vẫn có thể dùng file cục bộ. Render Postgres gói miễn phí hết hạn sau 30 ngày, nên cần nâng cấp hoặc chuyển dữ liệu trước hạn nếu muốn lưu lâu dài. [Giới hạn gói miễn phí Render](https://render.com/docs/free). Sau khi deploy, tìm dòng `[LƯU VI PHẠM] PostgreSQL (DATABASE_URL)` hoặc `file trong STATE_DIR` cùng dòng `đã_khôi_phục=N` trong log. Những lượt đã mất trước khi gắn nơi lưu bền vững không thể tự khôi phục; bot chỉ có thể nhập `moderation-state.json` cũ nếu file đó còn trong thư mục chạy lúc khởi động lần đầu với database/disk.
 
 ## Bản 1.10.0
 

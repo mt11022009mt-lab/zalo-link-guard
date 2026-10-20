@@ -22,7 +22,9 @@ export class ModerationState {
   save() {
     if (this.saveHook) {
       const snapshot = structuredClone(this.data);
-      this.pendingSave = this.pendingSave.then(() => this.saveHook(snapshot));
+      // A failed write is reported to its caller. A later snapshot still gets
+      // a chance to persist the complete in-memory state after recovery.
+      this.pendingSave = this.pendingSave.catch(() => {}).then(() => this.saveHook(snapshot));
       this.pendingSave.catch(() => {}); // Callers observe failures via flush().
       return this.pendingSave;
     }

@@ -54,9 +54,8 @@ if (!listingGroups) {
     const opened = await createModerationState({ windowHours: config.violationWindowHours ?? 24 });
     state = opened.state;
     console.log(`[LƯU VI PHẠM] ${opened.storage}`);
-    if (process.env.RENDER === "true" && !process.env.DATABASE_URL && !process.env.STATE_DIR) {
-      console.warn("[LƯU VI PHẠM] SESSION_JSON chỉ giữ đăng nhập. Hãy gắn DATABASE_URL hoặc Render Persistent Disk + STATE_DIR để số lần vi phạm không mất khi dịch vụ khởi động lại.");
-    }
+    const restoredCount = state.listViolations().reduce((sum, item) => sum + item.count, 0);
+    console.log(`[LƯU VI PHẠM] đã_khôi_phục=${restoredCount} lượt còn hiệu lực trong ${config.violationWindowHours ?? 24} giờ`);
   } catch (error) {
     console.error(`[LƯU VI PHẠM] Không mở được nơi lưu trạng thái: ${error.message}`);
     process.exit(1);
