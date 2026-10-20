@@ -100,6 +100,7 @@ const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), 
   windowHours: config.violationWindowHours ?? 24,
 });
 
+const startedAt = Date.now();
 const zalo = new Zalo();
 console.log("Đang tạo mã QR đăng nhập...");
 botStatus = "Chờ quét mã QR";
@@ -137,26 +138,44 @@ if (listingGroups) {
 
 botStatus = "Đang trực và lọc link";
 if (config.dryRun) {
-  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật trong config.json: bot ghi nhận vi phạm nhưng KHÔNG xóa tin hay kick thành viên.");
+  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật: bot chỉ ghi nhận vi phạm, KHÔNG xóa tin hay kick thành viên.");
 }
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
-const moderation = createModeration({ api, config, state });
 
-for (const groupId of config.groupIds) {
-  try {
-    const info = await api.getGroupInfo(groupId);
+try {
+  const ownId = String(api.ctx.uid ?? "");
+  const info = await api.getGroupInfo(config.groupIds);
+  for (const groupId of config.groupIds) {
     const group = info?.gridInfoMap?.[groupId];
-    const role = group ? (group.creatorId === api.ctx.uid ? "Trưởng nhóm" : group.adminIds?.includes(api.ctx.uid) ? "Phó nhóm" : "Thành viên thường (THIẾU QUYỀN QTV)") : "Không rõ";
-    console.log(`[KIỂM TRA NHÓM] ID=${groupId} Tên="${group?.name ?? "N/A"}" Quyền=${role}`);
-  } catch (error) {
-    console.warn(`[KIỂM TRA NHÓM] ID=${groupId} Không lấy được thông tin:`, error.message);
+    if (!group) {
+      console.warn(`[KIỂM TRA NHÓM] ${groupId}: tài khoản bot không lấy được thông tin nhóm. Kiểm tra groupIds và tài khoản đăng nhập.`);
+      continue;
+    }
+    const isAdmin = String(group.creatorId) === ownId ||
+      (group.adminIds ?? []).some((id) => String(id) === ownId);
+    console.log(`[KIỂM TRA NHÓM] ${groupId} | ${group.name ?? "?"} | bot_là_QTV=${isAdmin}`);
+    if (!isAdmin) console.warn(`[KIỂM TRA NHÓM] ${groupId}: bot chưa là QTV; có thể không xóa được tin của người khác.`);
   }
+} catch (error) {
+  console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
 
-async function processMessage(message, options = {}) {
-  const source = options.source ?? "live";
-  if (await moderation.handleCommand(message)) return;
+const moderation = createModeration({ api, config, state });
+const seenMessages = new Map();
+
+async function processMessage(message, { source = "live" } = {}) {
+  if (source === "live" && await moderation.handleCommand(message)) return;
   if (message.type !== ThreadType.Group) return;
+  if (source === "history" && typeof message.data?.content === "string" &&
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
+
+  const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
+  if (messageKey) {
+    if (seenMessages.has(messageKey)) return;
+    seenMessages.set(messageKey, Date.now());
+    if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
+  }
+
   if (debug) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
@@ -172,7 +191,7 @@ async function processMessage(message, options = {}) {
 
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
-    console.warn(`[${source}] Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.`);
+    console.warn("Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.");
     return;
   }
   const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
@@ -187,7 +206,7 @@ async function processMessage(message, options = {}) {
       threadId: message.threadId,
       data: { msgId, cliMsgId, uidFrom },
     }, false);
-    console.log(`[ĐÃ GỬI LỆNH XÓA] ${details} trạng_thái=${response.status}`);
+    console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
   } catch (error) {
     console.error(`[LỖI XÓA] ${details}`, error);
   }
@@ -200,18 +219,11 @@ api.listener.on("message", (message) => {
 api.listener.on("error", (error) => console.error("Lỗi kết nối Zalo:", error));
 api.listener.start();
 
-const sweepIntervalSeconds = config.historySweepSeconds ?? 60;
-if (sweepIntervalSeconds > 0) {
-  const startedAt = Date.now();
+if (config.historySweepSeconds !== 0) {
+  const seconds = config.historySweepSeconds ?? 60;
   const sweepHistory = createHistorySweep({
-    api,
-    groupIds: config.groupIds,
-    startedAt,
-    processMessage,
+    api, groupIds: config.groupIds, startedAt, processMessage,
   });
-  const sweepTimer = setInterval(() => {
-    void sweepHistory().catch((error) => console.error("[QUÉT LỊCH SỬ] Lỗi định kỳ:", error));
-  }, sweepIntervalSeconds * 1000);
-  if (typeof sweepTimer.unref === "function") sweepTimer.unref();
-  console.log(`Đã bật quét vét lịch sử định kỳ mỗi ${sweepIntervalSeconds}s cho tin mới từ lúc khởi động.`);
+  setInterval(() => void sweepHistory(), seconds * 1000).unref();
+  console.log(`Đang kiểm tra bổ sung 50 tin gần nhất mỗi ${seconds} giây để bắt tin mới bị lỡ.`);
 }

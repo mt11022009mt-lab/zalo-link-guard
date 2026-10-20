@@ -39,7 +39,7 @@ export class ModerationState {
       return { duplicate: true };
     }
     const incident = {
-      groupId, userId, messageId, at: this.now(),
+      groupId, userId, messageId, displayName, at: this.now(),
       links: links.slice(0, 2).map((item) => item.url.slice(0, 120)),
     };
     this.data.incidents.push(incident);
@@ -68,6 +68,34 @@ export class ModerationState {
   listPending() {
     this.prune();
     return this.data.cases.filter((item) => item.status === "pending");
+  }
+
+  listViolations() {
+    this.prune();
+    const byMember = new Map();
+    const entryFor = (groupId, userId) => {
+      const key = JSON.stringify([groupId, userId]);
+      if (!byMember.has(key)) byMember.set(key, {
+        groupId, userId, count: 0, displayName: undefined, lastAt: 0, pendingCase: null,
+      });
+      return byMember.get(key);
+    };
+    for (const incident of this.data.incidents) {
+      const entry = entryFor(incident.groupId, incident.userId);
+      entry.count++;
+      if (incident.at >= entry.lastAt) {
+        entry.lastAt = incident.at;
+        if (incident.displayName) entry.displayName = incident.displayName;
+      }
+    }
+    for (const item of this.data.cases) {
+      if (item.status !== "pending") continue;
+      const entry = entryFor(item.groupId, item.userId);
+      entry.pendingCase = item;
+      if (!entry.displayName) entry.displayName = item.displayName;
+      entry.lastAt = Math.max(entry.lastAt, item.createdAt);
+    }
+    return [...byMember.values()].sort((a, b) => b.lastAt - a.lastAt);
   }
 
   markNotified(id, adminId) {

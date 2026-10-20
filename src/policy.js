@@ -31,13 +31,20 @@ export function extractMessageLinks(message) {
 
   const msgType = String(message.data?.msgType ?? "").toLowerCase();
   const isLinkPreview = msgType === "chat.link" || msgType === "chat.recommended";
+  const hasMediaCaption = msgType === "chat.photo" || msgType === "chat.video.msg" ||
+    msgType === "chat.gif" || msgType === "share.file";
   // Photos/files can carry CDN URLs in href/url. Only their user-written
   // caption is checked; link previews expose the shared target in href/url.
+  // Zalo photo captions are delivered in description (sometimes desc).
   const fields = isLinkPreview
     ? [content.href, content.url, content.title, content.description, content.text, content.caption, content.msg]
     : [content.caption, content.text, content.message, content.msg, content.body,
+        hasMediaCaption ? content.description : undefined,
+        hasMediaCaption ? content.desc : undefined,
         typeof content.content === "string" ? content.content : undefined,
-        content.data?.text, content.data?.caption, content.data?.msg];
+        content.data?.text, content.data?.caption, content.data?.msg,
+        hasMediaCaption ? content.data?.description : undefined,
+        hasMediaCaption ? content.data?.desc : undefined];
   return extractLinks(fields.filter((value) => typeof value === "string").join(" "));
 }
 

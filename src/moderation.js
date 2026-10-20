@@ -33,23 +33,40 @@ function caseDisplayName(item, info) {
   return safeDisplayName(item.displayName || member?.dName || member?.zaloName);
 }
 
-function describeCase(item, info, { compact = false } = {}) {
+function describeCase(item, info, { compact = false, windowHours = 24 } = {}) {
   const mentionText = `@${caseDisplayName(item, info)}`;
   const prefix = compact
     ? `#${item.id} | Nhóm ${item.groupId} | `
     : `HỒ SƠ VI PHẠM #${item.id}\nNhóm: ${item.groupId}\nNgười gửi: `;
   const mention = { pos: prefix.length, uid: String(item.userId), len: mentionText.length };
   if (compact) {
-    return { msg: `${prefix}${mentionText} | ${item.evidence.length} lần | /duyetkick ${item.id} | /tuchoikick ${item.id}`, mention };
+    return { msg: `${prefix}${mentionText} | hồ sơ ${item.evidence.length} tin | /duyetkick ${item.id} | /tuchoikick ${item.id}`, mention };
   }
   const evidence = item.evidence.map((entry, index) => {
     const time = new Date(entry.at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     return `${index + 1}. ${time} | tin ${entry.messageId} | ${entry.links.join(", ")}`;
   }).join("\n");
   return {
-    msg: `${prefix}${mentionText}\n${item.evidence.length} lần gửi link bị cấm trong 24 giờ:\n${evidence}\n\nDuyệt kick: /duyetkick ${item.id}\nTừ chối: /tuchoikick ${item.id}\nBot KHÔNG tự kick khi chưa được duyệt.`,
+    msg: `${prefix}${mentionText}\n${item.evidence.length} lần gửi link bị cấm trong ${windowHours} giờ:\n${evidence}\n\nDuyệt kick: /duyetkick ${item.id}\nTừ chối: /tuchoikick ${item.id}\nBot KHÔNG tự kick khi chưa được duyệt.`,
     mention,
   };
+}
+
+function describeViolation(entry, info, { compact = false, windowHours = 24 } = {}) {
+  if (entry.pendingCase) {
+    const described = describeCase({ ...entry.pendingCase, displayName: entry.displayName || entry.pendingCase.displayName }, info, { compact, windowHours });
+    described.msg += compact
+      ? ` | hiện còn ${entry.count} lần trong ${windowHours} giờ`
+      : `\nHiện còn ${entry.count} lần trong ${windowHours} giờ.`;
+    return described;
+  }
+  const mentionText = `@${caseDisplayName(entry, info)}`;
+  const prefix = compact
+    ? `Nhóm ${entry.groupId} | `
+    : `Nhóm: ${entry.groupId}\nNgười gửi: `;
+  const mention = { pos: prefix.length, uid: String(entry.userId), len: mentionText.length };
+  const status = `${entry.count}/4 lần trong ${windowHours} giờ; chưa có hồ sơ chờ duyệt`;
+  return { msg: compact ? `${prefix}${mentionText} | ${status}` : `${prefix}${mentionText}\n${status}`, mention };
 }
 
 function combineCases(entries) {
@@ -67,6 +84,7 @@ function combineCases(entries) {
 export function createModeration({ api, config, state, log = console }) {
   const ownId = String(api.getOwnId());
   const kicksInFlight = new Set();
+  const windowHours = config.violationWindowHours ?? 24;
 
   async function groupInfo(groupId) {
     const result = await api.getGroupInfo(groupId);
@@ -94,7 +112,7 @@ export function createModeration({ api, config, state, log = console }) {
   }
 
   async function notifyAdmins(item) {
-    const summary = describeCase(item);
+    const summary = describeCase(item, undefined, { windowHours });
     let sent = 0;
     if (config.reviewGroupId) {
       try {
@@ -141,7 +159,7 @@ export function createModeration({ api, config, state, log = console }) {
     if (recorded.count <= 3) {
       const prefix = "⚠️ ";
       await groupNotice(groupId, {
-        msg: `${prefix}${mentionText} đã gửi link không được phép ${recorded.count}/3 lần trong 24 giờ. Lần tiếp theo sẽ chuyển hồ sơ cho QTV duyệt kick.`,
+        msg: `${prefix}${mentionText} đã gửi link không được phép ${recorded.count}/4 lần trong ${windowHours} giờ. Đến lần thứ 4 bot sẽ chuyển hồ sơ cho QTV duyệt kick.`,
         mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
       });
     } else if (recorded.newCase) {
@@ -218,35 +236,39 @@ export function createModeration({ api, config, state, log = console }) {
     }
 
     if (command === "vipham") {
-      const pending = state.listPending();
-      const visible = [];
-      for (const item of pending) {
+      const inOriginalGroup = message.type === ThreadType.Group && config.groupIds.includes(String(message.threadId));
+      const groupsToCheck = inOriginalGroup ? [String(message.threadId)] : config.groupIds;
+      const authorized = new Map();
+      let failedChecks = 0;
+      for (const groupId of groupsToCheck) {
         try {
-          const info = await groupInfo(item.groupId);
-          if (isAdmin(info, senderId)) visible.push({ item, info });
+          const info = await groupInfo(groupId);
+          if (isAdmin(info, senderId)) authorized.set(groupId, info);
         } catch (error) {
-          log.error("Không kiểm tra được quyền QTV khi liệt kê hồ sơ:", error);
+          failedChecks++;
+          log.error(`Không kiểm tra được quyền QTV của nhóm ${groupId} khi liệt kê vi phạm:`, error);
         }
       }
-      if (!visible.length) {
-        await reply(message, "Không có hồ sơ chờ duyệt mà bạn có quyền xem.");
+      if (!authorized.size) {
+        await reply(message, failedChecks
+          ? "Không xác minh được quyền QTV trên Zalo. Kiểm tra kết nối và thử lại."
+          : "Chỉ QTV của nhóm được bot quản lý mới xem được danh sách vi phạm.");
         return true;
       }
-      const inOriginalGroup = message.type === ThreadType.Group && config.groupIds.includes(String(message.threadId));
-      const selected = inOriginalGroup
-        ? visible.filter(({ item }) => item.groupId === String(message.threadId)).slice(0, 10)
-        : visible.slice(0, 10);
+      const selected = state.listViolations()
+        .filter((entry) => authorized.has(entry.groupId))
+        .slice(0, 10);
       if (!selected.length) {
-        await reply(message, "Nhóm này không có hồ sơ chờ duyệt.");
+        await reply(message, `Chưa có lần gửi link bị cấm nào còn hiệu lực trong ${windowHours} giờ ở nhóm bạn quản lý.`);
         return true;
       }
-      const summary = combineCases(selected.map(({ item, info }) => describeCase(item, info, { compact: inOriginalGroup })));
+      const summary = combineCases(selected.map((entry) => describeViolation(entry, authorized.get(entry.groupId), { compact: inOriginalGroup, windowHours })));
       try {
         if (inOriginalGroup) {
           await api.sendMessage(summary, message.threadId, ThreadType.Group);
         } else {
           await api.sendMessage(summary.msg, senderId, ThreadType.User);
-          await reply(message, `Đã gửi riêng ${selected.length} hồ sơ chờ duyệt cho QTV.`);
+          await reply(message, `Đã gửi riêng ${selected.length} thành viên có vi phạm còn hiệu lực cho QTV.`);
         }
       } catch (error) {
         log.error("Không gửi được danh sách vi phạm riêng:", error);

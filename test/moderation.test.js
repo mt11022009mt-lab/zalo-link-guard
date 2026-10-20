@@ -18,7 +18,9 @@ const logger = { info() {}, error() {} };
 function fixture(t, overrides = {}) {
   const directory = mkdtempSync(join(tmpdir(), "zalo-link-guard-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const state = new ModerationState(join(directory, "state.json"), { now: () => 1_000_000_000 });
+  const state = new ModerationState(join(directory, "state.json"), {
+    now: () => 1_000_000_000, windowHours: overrides.violationWindowHours ?? 24,
+  });
   const sent = [];
   const kicked = [];
   const api = {
@@ -63,6 +65,7 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.equal(pending.length, 1);
   assert.equal(pending[0].evidence.length, 4);
   assert.equal(pending[0].displayName, "Người gửi");
+  assert.equal(state.listViolations()[0].count, 4);
   assert.equal(kicked.length, 0);
   assert.ok(sent.some((item) => item.id === ADMIN && item.text.includes("Người gửi: @Người gửi") && !item.text.includes(`Người gửi: ${MEMBER}`)));
   const notice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("Đã lập hồ sơ"));
@@ -76,6 +79,8 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.equal(list.id, GROUP);
   assert.equal(typeof list.text, "object");
   assert.equal(list.text.msg.includes(MEMBER), false);
+  assert.equal(list.text.msg.includes("hiện còn 4 lần"), true);
+  assert.equal(list.text.msg.includes("hồ sơ 4 tin"), true);
   assert.deepEqual(list.text.mentions, [{
     pos: list.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
   }]);
@@ -86,6 +91,59 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
   await moderation.handleCommand(approval(`/duyetkick ${pending[0].id}`));
   assert.equal(kicked.length, 1);
+});
+
+test("/vipham shows 1–3 strikes to admins before a review case exists", async (t) => {
+  const { state, sent, kicked, moderation } = fixture(t);
+  const result = { links: [
+    { url: "https://spam.site/a", hostname: "spam.site" },
+    { url: "https://zalo.me/g/a", hostname: "zalo.me" },
+  ] };
+  for (let id = 1; id <= 3; id++) {
+    await moderation.onViolation(linkMessage(id), result);
+    assert.equal(state.listViolations()[0].count, id);
+    assert.equal(state.listPending().length, 0);
+    assert.equal(sent.at(-1).text.msg.includes(`${id}/4 lần`), true);
+  }
+  await moderation.handleCommand(approval("/vipham"));
+  const groupList = sent.at(-1);
+  assert.equal(groupList.id, GROUP);
+  assert.equal(groupList.text.msg.includes("3/4 lần"), true);
+  assert.deepEqual(groupList.text.mentions, [{
+    pos: groupList.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
+  }]);
+  await moderation.handleCommand(approval("/vipham", MEMBER));
+  assert.equal(sent.at(-1).text.includes("Chỉ QTV"), true);
+  assert.equal(kicked.length, 0);
+  assert.equal(state.listViolations()[0].count, 3);
+});
+
+test("/vipham via private message shows counts without disclosing other groups", async (t) => {
+  const { sent, moderation } = fixture(t);
+  await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
+  await moderation.handleCommand({ type: 0, isSelf: false, threadId: ADMIN, data: { uidFrom: ADMIN, content: "/vipham" } });
+  const privateList = sent.findLast((item) => item.id === ADMIN && typeof item.text === "string" && item.text.includes("1/4 lần"));
+  assert.ok(privateList);
+  assert.equal(privateList.text.includes("@Người gửi"), true);
+});
+
+test("configured violation window is shown and old strikes leave the list", async (t) => {
+  const { sent, moderation } = fixture(t, { violationWindowHours: 12 });
+  await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
+  assert.equal(sent.at(-1).text.msg.includes("1/4 lần trong 12 giờ"), true);
+  await moderation.handleCommand(approval("/vipham"));
+  assert.equal(sent.at(-1).text.msg.includes("1/4 lần trong 12 giờ"), true);
+
+  const directory = mkdtempSync(join(tmpdir(), "zalo-link-guard-window-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  let time = 1_000_000_000;
+  const state = new ModerationState(join(directory, "state.json"), { now: () => time, windowHours: 1 });
+  state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: "old", links: [{ url: "https://spam.site/a" }] });
+  time += 30 * 60 * 1000;
+  state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: "new", links: [{ url: "https://spam.site/a" }] });
+  assert.equal(state.listViolations()[0].count, 2);
+  time += 31 * 60 * 1000;
+  assert.equal(state.listViolations()[0].count, 1);
 });
 
 test("old pending cases use the current group name for a real mention", async (t) => {
@@ -130,6 +188,7 @@ test("dry run never kicks for approval or manual command", async (t) => {
   const { state, kicked, moderation } = fixture(t, { dryRun: true });
   await moderation.onViolation(linkMessage("dry-run"), { links: [{ url: "https://spam.site/a" }] });
   assert.equal(state.data.incidents.length, 0);
+  assert.equal(state.listViolations().length, 0);
   const item = state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: "1", links: [{ url: "spam.site" }] });
   for (let id = 2; id <= 4; id++) state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: String(id), links: [{ url: "spam.site" }] });
   const caseId = state.listPending()[0].id;
@@ -147,6 +206,7 @@ test("rejection resets strikes and leaves the member in the group", async (t) =>
   await moderation.handleCommand(approval(`/tuchoikick ${caseId}`));
   assert.equal(state.getCase(caseId).status, "rejected");
   assert.equal(state.data.incidents.length, 0);
+  assert.equal(state.listViolations().length, 0);
   assert.equal(kicked.length, 0);
 });
 

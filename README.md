@@ -36,21 +36,21 @@ Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gử
 - Nhận dạng link dạng `https://`, `www.`, tên miền thường gặp, `hxxps://` và dấu chấm viết thành `[.]`. Link `zalo.me/g/` bị xuống dòng trước mã mời cũng được ghép lại.
 - Nếu tin chứa ít nhất một tên miền ngoài `allowedDomains`, bot thử xóa **cả tin**. Vì vậy, hãy thêm các tên miền hợp lệ trước khi bật xóa.
 - Mọi link `zalo.me` luôn bị lọc theo cấu hình mặc định, kể cả khi `allowedDomains` có `zalo.me`. Có thể điều chỉnh bằng `blockZaloLinks` và `blockZaloGroupInvites`.
-- Bot đọc văn bản, một số dạng nội dung văn bản được Zalo gói trong object, chú thích ảnh/file, và tin xem trước link `chat.link` hoặc `chat.recommended`. Đường dẫn nội bộ của ảnh và file không bị coi là link quảng cáo. Link giấu trong ảnh hoặc mã QR cần OCR và hiện chưa được đọc.
+- Bot đọc văn bản, một số dạng nội dung văn bản được Zalo gói trong object, chú thích ảnh/video/file (gồm trường `description` của tin `chat.photo`), và tin xem trước link `chat.link` hoặc `chat.recommended`. Đường dẫn nội bộ của ảnh và file không bị coi là link quảng cáo. Link được in bên trong ảnh hoặc mã QR cần OCR và hiện chưa được đọc.
 
 ## Cảnh báo, duyệt và kick
 
-Mỗi **tin nhắn** có link bị cấm tính là một lần vi phạm, dù tin có nhiều link. Trong khoảng thời gian `violationWindowHours` (mặc định 24 giờ), bot cảnh báo ở lần 1, 2, 3. Lần thứ 4, bot tạo một hồ sơ gồm 4 tin vi phạm và gửi cho QTV. Bot **không tự kick** khi lập hồ sơ. Hồ sơ chờ duyệt thêm một khoảng thời gian bằng `violationWindowHours`; hết hạn thì không thể dùng để kick. Từ chối hồ sơ sẽ đặt lại bộ đếm của thành viên đó. Vì vậy, một tin link bị xóa vẫn chưa làm thành viên bị kick.
+Mỗi **tin nhắn** có link bị cấm tính là một lần vi phạm, dù tin có nhiều link. Trong khoảng thời gian `violationWindowHours` (mặc định 24 giờ), bot cảnh báo ở lần 1/4, 2/4, 3/4. Lần thứ 4, bot tạo một hồ sơ gồm 4 tin vi phạm và gửi cho QTV. Bot **không tự kick** khi lập hồ sơ. Hồ sơ chờ duyệt thêm một khoảng thời gian bằng `violationWindowHours`; hết hạn thì không thể dùng để kick. Từ chối hồ sơ sẽ đặt lại bộ đếm của thành viên đó. Vì vậy, một tin link bị xóa vẫn chưa làm thành viên bị kick.
 
 QTV của nhóm có thể gửi các lệnh sau trong nhóm gốc hoặc nhắn riêng cho tài khoản bot:
 
 ```text
-/vipham                 Xem các hồ sơ chờ duyệt; bot gửi danh sách qua tin riêng
+/vipham                 Xem số lần vi phạm còn hiệu lực và hồ sơ chờ duyệt
 /duyetkick MA_HO_SO      Duyệt và kick đúng một thành viên trong hồ sơ
 /tuchoikick MA_HO_SO     Từ chối hồ sơ, đặt lại bộ đếm
 ```
 
-Khi QTV gửi `/vipham` **trong nhóm gốc**, bot trả danh sách ngắn ngay tại nhóm với tag `@TênThànhViên` thật để bấm xem người vi phạm. Thông báo lập hồ sơ trong nhóm cũng tag người đó. Khi gửi `/vipham` qua tin riêng hoặc trong nhóm QTV riêng, bot gửi hồ sơ qua tin riêng với `@TênThànhViên` dạng chữ; bot chỉ gắn mention thật ở nhóm gốc. UID vẫn được lưu nội bộ để duyệt kick chính xác nhưng không hiện làm tên chính của người vi phạm. Hồ sơ cũ sẽ lấy tên hiện tại từ danh sách thành viên nhóm nếu có.
+Khi QTV gửi `/vipham` **trong nhóm gốc**, bot trả tối đa 10 thành viên có vi phạm còn hiệu lực tại nhóm đó, gồm cả người mới vi phạm 1–3 lần và người có hồ sơ chờ duyệt. Danh sách có tag `@TênThànhViên` thật để bấm xem người vi phạm. Với hồ sơ chờ duyệt, bot ghi riêng số tin trong hồ sơ và số lần hiện còn trong cửa sổ thời gian. Thông báo lập hồ sơ trong nhóm cũng tag người đó. Khi gửi `/vipham` qua tin riêng hoặc trong nhóm QTV riêng, bot gửi danh sách của các nhóm mà người ra lệnh đang là QTV qua tin riêng với `@TênThànhViên` dạng chữ; bot chỉ gắn mention thật ở nhóm gốc. UID vẫn được lưu nội bộ để duyệt kick chính xác nhưng không hiện làm tên chính của người vi phạm. Hồ sơ cũ sẽ lấy tên hiện tại từ danh sách thành viên nhóm nếu có. Nếu chưa có tin vi phạm còn hiệu lực, bot nói rõ danh sách đang trống; nếu không phải QTV, bot báo thiếu quyền.
 
 Lệnh trực tiếp dưới đây chỉ dùng **trong nhóm gốc**:
 
