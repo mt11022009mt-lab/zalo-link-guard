@@ -8,7 +8,9 @@ const { Pool } = pg;
 export async function createModerationState({ cwd = process.cwd(), env = process.env, windowHours = 24, PoolClass = Pool } = {}) {
   const localPath = resolve(cwd, "moderation-state.json");
   if (env.RENDER === "true" && !env.DATABASE_URL && !env.STATE_DIR) {
-    throw new Error("Render cần DATABASE_URL hoặc Persistent Disk với STATE_DIR để giữ số lần vi phạm qua lần khởi động lại. SESSION_JSON chỉ giữ đăng nhập.");
+    if (env.REQUIRE_PERSISTENT_STATE === "true") {
+      throw new Error("Render cần DATABASE_URL hoặc Persistent Disk với STATE_DIR để giữ số lần vi phạm qua lần khởi động lại. SESSION_JSON chỉ giữ đăng nhập.");
+    }
   }
   if (env.DATABASE_URL) {
     const pool = new PoolClass({ connectionString: env.DATABASE_URL, max: 2 });

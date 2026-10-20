@@ -25,11 +25,15 @@ test("STATE_DIR keeps counts after process restart", async () => {
   }
 });
 
-test("Render refuses an ephemeral counter before accepting violations", async () => {
+test("Render allows ephemeral counter gracefully, or refuses if REQUIRE_PERSISTENT_STATE is set", async () => {
   const dir = mkdtempSync(join(tmpdir(), "zalo-render-"));
   try {
+    const ephemeral = await createModerationState({ cwd: dir, env: { RENDER: "true" } });
+    assert.ok(ephemeral.state);
+    assert.match(ephemeral.storage, /Render/);
+
     await assert.rejects(
-      createModerationState({ cwd: dir, env: { RENDER: "true" } }),
+      createModerationState({ cwd: dir, env: { RENDER: "true", REQUIRE_PERSISTENT_STATE: "true" } }),
       /DATABASE_URL|STATE_DIR/,
     );
   } finally {
