@@ -13,11 +13,20 @@ const debug = process.argv.includes("--debug");
 let config;
 const validIds = (value) => Array.isArray(value) && value.every((id) => typeof id === "string" && id.trim());
 if (!listingGroups) {
-  try {
-    config = JSON.parse(await readFile(configPath, "utf8"));
-  } catch {
-    console.error("Thiếu hoặc không đọc được config.json. Hãy sao chép config.example.json thành config.json và sửa cấu hình.");
-    process.exit(1);
+  if (process.env.CONFIG_JSON) {
+    try {
+      config = JSON.parse(process.env.CONFIG_JSON);
+    } catch {
+      console.error("Biến môi trường CONFIG_JSON không đúng định dạng JSON.");
+      process.exit(1);
+    }
+  } else {
+    try {
+      config = JSON.parse(await readFile(configPath, "utf8"));
+    } catch {
+      console.error("Thiếu hoặc không đọc được config.json. Hãy sao chép config.example.json thành config.json hoặc đặt biến môi trường CONFIG_JSON.");
+      process.exit(1);
+    }
   }
   if (!validIds(config.groupIds) || config.groupIds.length === 0 || config.groupIds.some((id) => id === "THAY_BANG_ID_NHOM") ||
       !validIds(config.trustedUserIds) || !validIds(config.allowedDomains) || typeof config.dryRun !== "boolean" ||
@@ -38,22 +47,15 @@ const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), 
   windowHours: config.violationWindowHours ?? 24,
 });
 
-const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
-const zalo = new Zalo();
-let api;
-try {
-  api = await loginWithSession({
-    zalo,
-    sessionJson: process.env.SESSION_JSON,
-    qrPath,
-    sessionPath: resolve(process.cwd(), "zalo-session.json"),
-    isRender: process.env.RENDER === "true",
-  });
-} catch (error) {
-  console.error(`[ĐĂNG NHẬP] ${error.message}`);
-  process.exit(1);
-}
 const startedAt = Date.now();
+const sessionFile = resolve(process.cwd(), "zalo-session.json");
+const zalo = new Zalo();
+const api = await loginWithSession({
+  zalo,
+  sessionEnv: process.env.SESSION_JSON,
+  sessionFile,
+  isRender: Boolean(process.env.RENDER),
+});
 
 if (listingGroups) {
   const groups = await api.getAllGroups();
@@ -71,14 +73,15 @@ if (listingGroups) {
   process.exit(0);
 }
 
+if (config.dryRun) {
+  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật trong config.json: bot ghi nhận vi phạm nhưng KHÔNG xóa tin hay kick thành viên.");
+}
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
-if (config.dryRun) console.warn("[CHỈ XEM TRƯỚC] dryRun=true: bot sẽ KHÔNG xóa tin, không ghi vi phạm và không kick.");
-if (config.blockZaloLinks === false) console.warn("[CẤU HÌNH] blockZaloLinks=false: link zalo.me ngoài /g/ có thể được phép.");
 try {
-  const ownId = String(api.getOwnId());
+  const ownId = String(api.ctx.uid ?? "");
   const info = await api.getGroupInfo(config.groupIds);
   for (const groupId of config.groupIds) {
-    const group = info.gridInfoMap?.[groupId];
+    const group = info?.gridInfoMap?.[groupId];
     if (!group) {
       console.warn(`[KIỂM TRA NHÓM] ${groupId}: tài khoản bot không lấy được thông tin nhóm. Kiểm tra groupIds và tài khoản đăng nhập.`);
       continue;
@@ -93,7 +96,6 @@ try {
 }
 const moderation = createModeration({ api, config, state });
 const seenMessages = new Map();
-const messagesInFlight = new Set();
 
 async function processMessage(message, { source = "live" } = {}) {
   if (source === "live" && await moderation.handleCommand(message)) return;
@@ -101,7 +103,11 @@ async function processMessage(message, { source = "live" } = {}) {
   if (source === "history" && typeof message.data?.content === "string" &&
       /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
-  if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
+  if (messageKey) {
+    if (seenMessages.has(messageKey)) return;
+    seenMessages.set(messageKey, Date.now());
+    if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
+  }
   if (debug) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
@@ -121,34 +127,22 @@ async function processMessage(message, { source = "live" } = {}) {
     return;
   }
   const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
-  if (messageKey) messagesInFlight.add(messageKey);
-  try {
-    if (config.dryRun) {
-      console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
-    } else {
-      let response;
-      try {
-        response = await api.deleteMessage({
-          type: ThreadType.Group,
-          threadId: message.threadId,
-          data: { msgId, cliMsgId, uidFrom },
-        }, false);
-      } catch (error) {
-        console.error(`[LỖI XÓA] ${details}`, error);
-        // A detected link still counts once; leave it eligible for a later delete retry.
-        await moderation.onViolation(message, result);
-        return;
-      }
-      console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
-    }
-    if (messageKey) {
-      seenMessages.set(messageKey, Date.now());
-      if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
-    }
+  if (config.dryRun) {
+    console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
     await moderation.onViolation(message, result);
-  } finally {
-    if (messageKey) messagesInFlight.delete(messageKey);
+    return;
   }
+  try {
+    const response = await api.deleteMessage({
+      type: ThreadType.Group,
+      threadId: message.threadId,
+      data: { msgId, cliMsgId, uidFrom },
+    }, false);
+    console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
+  } catch (error) {
+    console.error(`[LỖI XÓA] ${details}`, error);
+  }
+  await moderation.onViolation(message, result);
 }
 
 api.listener.on("message", (message) => {
