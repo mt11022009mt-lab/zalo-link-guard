@@ -61,7 +61,7 @@ function describeViolation(entry, info, { compact = false, windowHours = 24 } = 
     ? `Nhóm ${entry.groupId} | `
     : `Nhóm: ${entry.groupId}\nNgười gửi: `;
   const mention = { pos: prefix.length, uid: String(entry.userId), len: mentionText.length };
-  const status = `${entry.count}/4 lần trong ${windowHours} giờ; chưa có hồ sơ chờ duyệt`;
+  const status = `${entry.count}/3 lần trong ${windowHours} giờ; chưa có hồ sơ chờ duyệt`;
   return { msg: compact ? `${prefix}${mentionText} | ${status}` : `${prefix}${mentionText}\n${status}`, mention };
 }
 
@@ -147,23 +147,58 @@ export function createModeration({ api, config, state, log = console }) {
       log.info(`[XEM TRƯỚC] Sẽ ghi một vi phạm của ${userId} trong nhóm ${groupId}; chưa gửi cảnh báo hoặc kick.`);
       return;
     }
+    const maxViolations = config.maxViolations ?? 3;
+    const autoKick = config.autoKick !== false;
     const recorded = state.recordViolation({ groupId, userId, messageId, links: result.links, displayName });
     if (recorded.duplicate) return;
     await state.flush();
-    log.info(`[ĐẾM VI PHẠM] nhóm=${groupId} người_gửi=${userId} lượt=${recorded.count}/4 trong ${windowHours} giờ`);
-    if (recorded.count <= 3) {
+    log.info(`[ĐẾM VI PHẠM] nhóm=${groupId} người_gửi=${userId} lượt=${recorded.count}/${maxViolations} trong ${windowHours} giờ`);
+    if (recorded.count < maxViolations) {
       const prefix = "⚠️ ";
       await groupNotice(groupId, {
-        msg: `${prefix}${mentionText} đã gửi link không được phép ${recorded.count}/4 lần trong ${windowHours} giờ. Đến lần thứ 4 bot sẽ chuyển hồ sơ cho QTV duyệt kick.`,
+        msg: `${prefix}${mentionText} đã gửi link không được phép ${recorded.count}/${maxViolations} lần trong ${windowHours} giờ. Đến lần thứ ${maxViolations} bot sẽ ${autoKick ? "kick khỏi nhóm" : "chuyển hồ sơ cho QTV duyệt kick"}.`,
         mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
       });
-    } else if (recorded.newCase) {
-      const sent = await notifyAdmins(recorded.pendingCase);
-      const prefix = `⚠️ Đã lập hồ sơ #${recorded.pendingCase.id} cho `;
-      await groupNotice(groupId, {
-        msg: `${prefix}${mentionText} sau ${recorded.count} lần gửi link. QTV sẽ duyệt trước khi kick.${sent ? "" : " Chưa gửi được hồ sơ riêng cho QTV; kiểm tra quyền nhắn tin hoặc nhóm duyệt."}`,
-        mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
-      });
+    } else {
+      let kickedDirectly = false;
+      if (autoKick) {
+        try {
+          const info = await groupInfo(groupId);
+          validateKickTarget(info, userId);
+          if (config.dryRun) {
+            log.info(`[XEM TRƯỚC] Sẽ auto-kick ${userId} trong nhóm ${groupId} sau ${recorded.count} lần vi phạm.`);
+            kickedDirectly = true;
+          } else {
+            await kickOne(userId, groupId);
+            kickedDirectly = true;
+            log.info(`[AUTO-KICK] Đã kick ${userId} khỏi nhóm ${groupId} sau ${recorded.count} lần vi phạm.`);
+          }
+        } catch (error) {
+          log.warn(`[AUTO-KICK THẤT BẠI] nhóm=${groupId} người_gửi=${userId}: ${error.message}; chuyển sang lập hồ sơ QTV duyệt.`);
+        }
+
+        if (kickedDirectly) {
+          const prefix = "⛔ ";
+          await groupNotice(groupId, {
+            msg: `${prefix}${mentionText} đã bị kick khỏi nhóm do vi phạm gửi link ${recorded.count}/${maxViolations} lần trong ${windowHours} giờ.`,
+            mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
+          });
+          if (recorded.pendingCase) {
+            state.setCaseStatus(recorded.pendingCase.id, "approved", { reviewedBy: ownId, reviewedAt: Date.now() });
+            await state.flush();
+          }
+          return;
+        }
+      }
+
+      if (recorded.newCase) {
+        const sent = await notifyAdmins(recorded.pendingCase);
+        const prefix = `⚠️ Đã lập hồ sơ #${recorded.pendingCase.id} cho `;
+        await groupNotice(groupId, {
+          msg: `${prefix}${mentionText} sau ${recorded.count} lần gửi link. QTV sẽ duyệt trước khi kick.${sent ? "" : " Chưa gửi được hồ sơ riêng cho QTV; kiểm tra quyền nhắn tin hoặc nhóm duyệt."}`,
+          mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
+        });
+      }
     }
   }
 
@@ -301,7 +336,8 @@ export function createModeration({ api, config, state, log = console }) {
         return true;
       }
       validateKickTarget(info, item.userId);
-      if (item.evidence.length < 4) throw new Error("Hồ sơ thiếu ít nhất 4 lần vi phạm.");
+      const requiredCount = config.maxViolations ?? 3;
+      if (item.evidence.length < requiredCount) throw new Error(`Hồ sơ thiếu ít nhất ${requiredCount} lần vi phạm.`);
       if (config.dryRun) {
         await reply(message, `[XEM TRƯỚC] Hồ sơ #${caseId} đủ điều kiện nhưng dryRun=true; chưa kick.`);
         return true;

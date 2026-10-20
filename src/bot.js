@@ -100,6 +100,8 @@ if (!listingGroups) {
   if (!validIds(config.groupIds) || config.groupIds.length === 0 || config.groupIds.some((id) => id === "THAY_BANG_ID_NHOM") ||
       !validIds(config.trustedUserIds) || !validIds(config.allowedDomains) || typeof config.dryRun !== "boolean" ||
       (config.blockImages !== undefined && typeof config.blockImages !== "boolean") ||
+      (config.autoKick !== undefined && typeof config.autoKick !== "boolean") ||
+      (config.maxViolations !== undefined && (!Number.isInteger(config.maxViolations) || config.maxViolations < 1 || config.maxViolations > 10)) ||
       (config.blockZaloLinks !== undefined && typeof config.blockZaloLinks !== "boolean") ||
       (config.blockZaloGroupInvites !== undefined && typeof config.blockZaloGroupInvites !== "boolean") ||
       (config.reviewGroupId !== undefined && (typeof config.reviewGroupId !== "string" || !config.reviewGroupId.trim() ||
@@ -173,6 +175,7 @@ if (listingGroups) {
 
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
 console.log(`[CHẶN ẢNH] blockImages=${config.blockImages !== false}; QTV và trustedUserIds được miễn.`);
+console.log(`[VI PHẠM & KICK] maxViolations=${config.maxViolations ?? 3}; autoKick=${config.autoKick !== false} (vi phạm 3 lần kick).`);
 if (config.dryRun) console.warn("[CHỈ XEM TRƯỚC] dryRun=true: bot sẽ KHÔNG xóa tin, không ghi vi phạm và không kick.");
 if (config.blockZaloLinks === false) console.warn("[CẤU HÌNH] blockZaloLinks=false: link zalo.me ngoài /g/ có thể được phép.");
 try {

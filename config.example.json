@@ -5,6 +5,8 @@
   "blockZaloLinks": true,
   "blockZaloGroupInvites": true,
   "blockImages": true,
+  "maxViolations": 3,
+  "autoKick": true,
   "violationWindowHours": 24,
   "historySweepSeconds": 60,
   "dryRun": true

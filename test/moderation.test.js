@@ -45,11 +45,11 @@ const manualKick = (sender = ADMIN, mentions = [{ uid: MEMBER, pos: 6, len: 7, t
   data: { uidFrom: sender, content: "/kick @Member", mentions },
 });
 
-test("four zalo.me messages create a review case; only a live admin approval kicks one member", async (t) => {
-  const { state, sent, kicked, moderation } = fixture(t, { allowedDomains: ["zalo.me"] });
+test("three zalo.me messages create a review case when autoKick is false; only a live admin approval kicks one member", async (t) => {
+  const { state, sent, kicked, moderation } = fixture(t, { allowedDomains: ["zalo.me"], autoKick: false });
   let lastMessage;
   let lastResult;
-  for (let id = 1; id <= 4; id++) {
+  for (let id = 1; id <= 3; id++) {
     const message = linkMessage(id);
     message.data.content = id === 2 ? { href: "https://zalo.me/abc" } : "https://zalo.me/abc";
     if (id === 2) message.data.msgType = "chat.recommended";
@@ -63,9 +63,9 @@ test("four zalo.me messages create a review case; only a live admin approval kic
 
   const pending = state.listPending();
   assert.equal(pending.length, 1);
-  assert.equal(pending[0].evidence.length, 4);
+  assert.equal(pending[0].evidence.length, 3);
   assert.equal(pending[0].displayName, "Người gửi");
-  assert.equal(state.listViolations()[0].count, 4);
+  assert.equal(state.listViolations()[0].count, 3);
   assert.equal(kicked.length, 0);
   assert.ok(sent.some((item) => item.id === ADMIN && item.text.includes("Người gửi: @Người gửi") && !item.text.includes(`Người gửi: ${MEMBER}`)));
   const notice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("Đã lập hồ sơ"));
@@ -79,8 +79,8 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.equal(list.id, GROUP);
   assert.equal(typeof list.text, "object");
   assert.equal(list.text.msg.includes(MEMBER), false);
-  assert.equal(list.text.msg.includes("hiện còn 4 lần"), true);
-  assert.equal(list.text.msg.includes("hồ sơ 4 tin"), true);
+  assert.equal(list.text.msg.includes("hiện còn 3 lần"), true);
+  assert.equal(list.text.msg.includes("hồ sơ 3 tin"), true);
   assert.deepEqual(list.text.mentions, [{
     pos: list.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
   }]);
@@ -93,29 +93,43 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.equal(kicked.length, 1);
 });
 
-test("/vipham shows 1–3 strikes to admins before a review case exists", async (t) => {
+test("three strikes auto-kicks member when autoKick is enabled (default)", async (t) => {
+  const { state, sent, kicked, moderation } = fixture(t);
+  for (let id = 1; id <= 3; id++) {
+    const message = linkMessage(id);
+    const result = checkMessage(message, { ...config, allowedDomains: ["zalo.me"] });
+    assert.ok(result);
+    await moderation.onViolation(message, result);
+  }
+  assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
+  assert.equal(state.listViolations()[0].count, 3);
+  const kickNotice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("đã bị kick khỏi nhóm"));
+  assert.ok(kickNotice);
+});
+
+test("/vipham shows 1–2 strikes to admins before a review case exists", async (t) => {
   const { state, sent, kicked, moderation } = fixture(t);
   const result = { links: [
     { url: "https://spam.site/a", hostname: "spam.site" },
     { url: "https://zalo.me/g/a", hostname: "zalo.me" },
   ] };
-  for (let id = 1; id <= 3; id++) {
+  for (let id = 1; id <= 2; id++) {
     await moderation.onViolation(linkMessage(id), result);
     assert.equal(state.listViolations()[0].count, id);
     assert.equal(state.listPending().length, 0);
-    assert.equal(sent.at(-1).text.msg.includes(`${id}/4 lần`), true);
+    assert.equal(sent.at(-1).text.msg.includes(`${id}/3 lần`), true);
   }
   await moderation.handleCommand(approval("/vipham"));
   const groupList = sent.at(-1);
   assert.equal(groupList.id, GROUP);
-  assert.equal(groupList.text.msg.includes("3/4 lần"), true);
+  assert.equal(groupList.text.msg.includes("2/3 lần"), true);
   assert.deepEqual(groupList.text.mentions, [{
     pos: groupList.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
   }]);
   await moderation.handleCommand(approval("/vipham", MEMBER));
   assert.equal(sent.at(-1).text.includes("Chỉ QTV"), true);
   assert.equal(kicked.length, 0);
-  assert.equal(state.listViolations()[0].count, 3);
+  assert.equal(state.listViolations()[0].count, 2);
 });
 
 test("image-only moderation does not create a link strike or kick case", async (t) => {
@@ -130,7 +144,7 @@ test("/vipham via private message shows counts without disclosing other groups",
   const { sent, moderation } = fixture(t);
   await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
   await moderation.handleCommand({ type: 0, isSelf: false, threadId: ADMIN, data: { uidFrom: ADMIN, content: "/vipham" } });
-  const privateList = sent.findLast((item) => item.id === ADMIN && typeof item.text === "string" && item.text.includes("1/4 lần"));
+  const privateList = sent.findLast((item) => item.id === ADMIN && typeof item.text === "string" && item.text.includes("1/3 lần"));
   assert.ok(privateList);
   assert.equal(privateList.text.includes("@Người gửi"), true);
 });
@@ -138,9 +152,9 @@ test("/vipham via private message shows counts without disclosing other groups",
 test("configured violation window is shown and old strikes leave the list", async (t) => {
   const { sent, moderation } = fixture(t, { violationWindowHours: 12 });
   await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
-  assert.equal(sent.at(-1).text.msg.includes("1/4 lần trong 12 giờ"), true);
+  assert.equal(sent.at(-1).text.msg.includes("1/3 lần trong 12 giờ"), true);
   await moderation.handleCommand(approval("/vipham"));
-  assert.equal(sent.at(-1).text.msg.includes("1/4 lần trong 12 giờ"), true);
+  assert.equal(sent.at(-1).text.msg.includes("1/3 lần trong 12 giờ"), true);
 
   const directory = mkdtempSync(join(tmpdir(), "zalo-link-guard-window-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

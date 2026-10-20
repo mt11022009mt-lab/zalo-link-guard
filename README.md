@@ -100,7 +100,7 @@ Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gử
 
 ## Cảnh báo, duyệt và kick
 
-Mỗi **tin nhắn** có link bị cấm tính là một lần vi phạm, dù tin có nhiều link. Trong khoảng thời gian `violationWindowHours` (mặc định 24 giờ), bot cảnh báo ở lần 1/4, 2/4, 3/4. Lần thứ 4, bot tạo một hồ sơ gồm 4 tin vi phạm và gửi cho QTV. Bot **không tự kick** khi lập hồ sơ. Hồ sơ chờ duyệt thêm một khoảng thời gian bằng `violationWindowHours`; hết hạn thì không thể dùng để kick. Từ chối hồ sơ sẽ đặt lại bộ đếm của thành viên đó. Vì vậy, một tin link bị xóa vẫn chưa làm thành viên bị kick.
+Mỗi **tin nhắn** có link bị cấm tính là một lần vi phạm, dù tin có nhiều link. Trong khoảng thời gian `violationWindowHours` (mặc định 24 giờ), bot cảnh báo ở lần 1/3, 2/3. Đến **lần thứ 3**, bot sẽ **tự động kick ngay thành viên vi phạm khỏi nhóm** (chế độ mặc định `autoKick: true`). Nếu bot chưa có quyền kick hoặc kick thất bại, bot sẽ tự động tạo hồ sơ `#HO_SO` chờ QTV duyệt bằng `/duyetkick`. Nếu muốn tắt tự động kick và chuyển sang chỉ duyệt thủ công, đặt `"autoKick": false` trong `config.json`.
 
 QTV của nhóm có thể gửi các lệnh sau trong nhóm gốc hoặc nhắn riêng cho tài khoản bot:
 

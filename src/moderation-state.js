@@ -60,12 +60,12 @@ export class ModerationState {
     const recent = this.data.incidents.filter((item) => item.groupId === groupId && item.userId === userId);
     let pendingCase = this.data.cases.find((item) => item.groupId === groupId && item.userId === userId && item.status === "pending");
     let newCase = false;
-    if (recent.length > 3 && !pendingCase) {
+    if (recent.length >= 3 && !pendingCase) {
       pendingCase = {
         id: randomBytes(4).toString("hex").toUpperCase(),
         groupId, userId, displayName, status: "pending", createdAt: this.now(),
         expiresAt: this.now() + this.windowMs,
-        evidence: recent.slice(-4), notifiedIds: [],
+        evidence: recent.slice(-3), notifiedIds: [],
       };
       this.data.cases.push(pendingCase);
       newCase = true;
