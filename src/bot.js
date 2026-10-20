@@ -47,15 +47,23 @@ const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), 
   windowHours: config.violationWindowHours ?? 24,
 });
 
-const startedAt = Date.now();
-const sessionFile = resolve(process.cwd(), "zalo-session.json");
+const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
+const sessionPath = resolve(process.cwd(), "zalo-session.json");
 const zalo = new Zalo();
-const api = await loginWithSession({
-  zalo,
-  sessionEnv: process.env.SESSION_JSON,
-  sessionFile,
-  isRender: Boolean(process.env.RENDER),
-});
+let api;
+try {
+  api = await loginWithSession({
+    zalo,
+    sessionJson: process.env.SESSION_JSON,
+    qrPath,
+    sessionPath,
+    isRender: process.env.RENDER === "true" || Boolean(process.env.RENDER),
+  });
+} catch (error) {
+  console.error(`[ĐĂNG NHẬP] ${error.message}`);
+  process.exit(1);
+}
+const startedAt = Date.now();
 
 if (listingGroups) {
   const groups = await api.getAllGroups();
