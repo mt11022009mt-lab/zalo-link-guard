@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Zalo, ThreadType } from "zca-js";
-import { checkMessage, extractMessageLinks } from "./policy.js";
+import { checkMessage, extractMessageLinks, isImageMessage } from "./policy.js";
 import { createModerationState } from "./state-store.js";
 import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
@@ -31,6 +31,7 @@ if (!listingGroups) {
   }
   if (!validIds(config.groupIds) || config.groupIds.length === 0 || config.groupIds.some((id) => id === "THAY_BANG_ID_NHOM") ||
       !validIds(config.trustedUserIds) || !validIds(config.allowedDomains) || typeof config.dryRun !== "boolean" ||
+      (config.blockImages !== undefined && typeof config.blockImages !== "boolean") ||
       (config.blockZaloLinks !== undefined && typeof config.blockZaloLinks !== "boolean") ||
       (config.blockZaloGroupInvites !== undefined && typeof config.blockZaloGroupInvites !== "boolean") ||
       (config.reviewGroupId !== undefined && (typeof config.reviewGroupId !== "string" || !config.reviewGroupId.trim() ||
@@ -39,7 +40,7 @@ if (!listingGroups) {
         config.violationWindowHours < 1 || config.violationWindowHours > 168)) ||
       (config.historySweepSeconds !== undefined && (config.historySweepSeconds !== 0 &&
         (!Number.isInteger(config.historySweepSeconds) || config.historySweepSeconds < 30 || config.historySweepSeconds > 300)))) {
-    console.error("Cấu hình không hợp lệ. Kiểm tra groupIds, trustedUserIds, allowedDomains, reviewGroupId, violationWindowHours và dryRun trong config.json.");
+    console.error("Cấu hình không hợp lệ. Kiểm tra groupIds, trustedUserIds, allowedDomains, blockImages, reviewGroupId, violationWindowHours và dryRun trong config.json.");
     process.exit(1);
   }
 }
@@ -93,6 +94,7 @@ if (listingGroups) {
 }
 
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
+console.log(`[CHẶN ẢNH] blockImages=${config.blockImages !== false}; QTV và trustedUserIds được miễn.`);
 if (config.dryRun) console.warn("[CHỈ XEM TRƯỚC] dryRun=true: bot sẽ KHÔNG xóa tin, không ghi vi phạm và không kick.");
 if (config.blockZaloLinks === false) console.warn("[CẤU HÌNH] blockZaloLinks=false: link zalo.me ngoài /g/ có thể được phép.");
 try {
@@ -131,11 +133,11 @@ async function processMessage(message, { source = "live" } = {}) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
     const keys = content && typeof content === "object" ? Object.keys(content).slice(0, 12).join(",") : "-";
-    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} loại=${message.data?.msgType ?? "?"} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
+    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} loại=${message.data?.msgType ?? "?"} ảnh=${isImageMessage(message)} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
   }
   const result = checkMessage(message, config);
   if (!result) {
-    if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)");
+    if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có ảnh/link bị cấm hoặc người gửi được miễn)");
     return;
   }
   const { msgId, cliMsgId, uidFrom } = message.data;
@@ -143,7 +145,9 @@ async function processMessage(message, { source = "live" } = {}) {
     console.warn("Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.");
     return;
   }
-  const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
+  const reason = [result.image ? "ảnh" : null, result.links.length ? `link:${result.links.map((item) => item.hostname).join(",")}` : null]
+    .filter(Boolean).join("+");
+  const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} lý_do=${reason}`;
   if (messageKey) messagesInFlight.add(messageKey);
   try {
     let group;
@@ -158,7 +162,7 @@ async function processMessage(message, { source = "live" } = {}) {
       markSeen(messageKey);
       return;
     }
-    if (debug) console.log(`[DEBUG] quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
+    if (debug) console.log(`[DEBUG] quyết_định=xóa lý_do=${reason}`);
     if (config.dryRun) {
       console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
     } else {
@@ -171,13 +175,13 @@ async function processMessage(message, { source = "live" } = {}) {
         }, false);
       } catch (error) {
         console.error(`[LỖI XÓA] ${details}`, error);
-        await moderation.onViolation(message, result);
+        if (result.links.length) await moderation.onViolation(message, result);
         return;
       }
       console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
     }
     markSeen(messageKey);
-    await moderation.onViolation(message, result);
+    if (result.links.length) await moderation.onViolation(message, result);
   } finally {
     if (messageKey) messagesInFlight.delete(messageKey);
   }

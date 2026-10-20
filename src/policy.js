@@ -87,6 +87,11 @@ export function isZaloDomain(hostname) {
   return hostname === "zalo.me" || hostname.endsWith(".zalo.me");
 }
 
+export function isImageMessage(message) {
+  const type = String(message?.data?.msgType ?? "").toLowerCase();
+  return ["chat.photo", "chat.album", "chat.image"].includes(type);
+}
+
 export function checkMessage(message, config) {
   if (!message || message.type !== 1 || message.isSelf) return null;
   if (!config.groupIds.includes(String(message.threadId))) return null;
@@ -96,5 +101,6 @@ export function checkMessage(message, config) {
     (config.blockZaloLinks !== false && isZaloDomain(link.hostname)) ||
     (config.blockZaloGroupInvites !== false && isZaloGroupInvite(link)) ||
     !isAllowedDomain(link.hostname, config.allowedDomains));
-  return blocked.length ? { links: blocked } : null;
+  const image = config.blockImages !== false && isImageMessage(message);
+  return blocked.length || image ? { links: blocked, image } : null;
 }

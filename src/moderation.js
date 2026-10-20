@@ -137,6 +137,7 @@ export function createModeration({ api, config, state, log = console }) {
   }
 
   async function onViolation(message, result) {
+    if (!result?.links?.length) return; // Image-only deletions never increase link strikes.
     const groupId = String(message.threadId);
     const userId = String(message.data.uidFrom);
     const messageId = String(message.data.msgId);

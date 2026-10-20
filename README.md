@@ -1,5 +1,15 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.12.1: cho phép GIF
+
+GIF của thành viên thường được giữ lại. Bot vẫn chặn ảnh tĩnh và album ảnh; QTV vẫn được gửi ảnh. Nếu caption GIF có link bị cấm, quy tắc lọc link vẫn xử lý tin đó như trước.
+
+## Bản 1.12.0: chặn ảnh của thành viên thường
+
+Bot xóa tin ảnh và album ảnh do **thành viên thường** gửi trong các nhóm được quản lý, kể cả ảnh không có link. Trưởng nhóm, phó nhóm và người trong `trustedUserIds` vẫn gửi ảnh được. Bot xác minh quyền QTV hiện tại trước khi xóa; nếu không xác minh được quyền, bot bỏ qua tin để tránh xóa nhầm ảnh của QTV. GIF, video, sticker và file thường không bị quy tắc ảnh chặn trong bản hiện tại.
+
+Thêm `"blockImages": true` vào `config.json` nếu muốn ghi rõ cấu hình. Bản này mặc định bật chặn ảnh ngay cả khi `config.json` cũ chưa có khóa đó; đặt `false` để tắt. Ảnh thường chỉ bị xóa, **không cộng số lần vi phạm link, không gửi cảnh báo link và không lập hồ sơ kick**. Ảnh có caption chứa link cấm vẫn được tính một lần vi phạm link như trước. `dryRun: true` chỉ ghi log xem trước, không xóa. Sau khi cập nhật, chạy `npm ci` và khởi động lại bot; xem `[CHẶN ẢNH] blockImages=true` trong log.
+
 ## Bản 1.11.0: caption ảnh và lưu số lần vi phạm
 
 Bot đọc thêm caption nằm trong `params`/`data.params` dạng JSON của tin ảnh. Bot chỉ quét các trường chữ do người gửi viết; URL CDN của ảnh không bị tính là link quảng cáo. Nếu vẫn thấy ảnh có caption link lọt, chạy bản mới với `--debug` và gửi **dòng `[DEBUG]` của chính tin đó** cùng dòng `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` nếu có. Có link trong ảnh chụp màn hình chưa đủ để biết sự kiện ảnh đã tới bot hay API xóa có hiệu lực. Không gửi QR, cookie hoặc `SESSION_JSON`.

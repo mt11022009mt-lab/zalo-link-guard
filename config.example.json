@@ -4,6 +4,7 @@
   "allowedDomains": [],
   "blockZaloLinks": true,
   "blockZaloGroupInvites": true,
+  "blockImages": true,
   "violationWindowHours": 24,
   "historySweepSeconds": 60,
   "dryRun": true

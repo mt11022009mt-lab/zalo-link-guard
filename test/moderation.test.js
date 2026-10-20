@@ -118,6 +118,14 @@ test("/vipham shows 1–3 strikes to admins before a review case exists", async 
   assert.equal(state.listViolations()[0].count, 3);
 });
 
+test("image-only moderation does not create a link strike or kick case", async (t) => {
+  const { state, kicked, moderation } = fixture(t);
+  await moderation.onViolation(linkMessage("photo-1"), { links: [], image: true });
+  assert.equal(state.listViolations().length, 0);
+  assert.equal(state.listPending().length, 0);
+  assert.equal(kicked.length, 0);
+});
+
 test("/vipham via private message shows counts without disclosing other groups", async (t) => {
   const { sent, moderation } = fixture(t);
   await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
