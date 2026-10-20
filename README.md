@@ -1,5 +1,17 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.9.0
+
+Bot có thể đăng nhập bằng biến môi trường `SESSION_JSON`. Sau lần quét QR thành công trên máy cá nhân, bot tự lưu thông tin đăng nhập vào `zalo-session.json` trong thư mục chạy. File này được bỏ qua bởi Git; không in cookie lên console. Trên Render, bot yêu cầu `SESSION_JSON` và dừng với thông báo rõ ràng nếu biến bị thiếu, sai định dạng hoặc phiên bị Zalo từ chối. Phiên có thể hết hạn hoặc bị thu hồi; khi đó phải tạo phiên mới bằng QR. Tính năng này không bảo đảm tránh bị hạn chế tài khoản.
+
+### Dùng trên Render
+
+1. Trên máy cá nhân, cập nhật bản này, chạy `npm ci` rồi `npm start -- --list-groups`. Quét QR một lần. Bot tạo file `zalo-session.json` trong thư mục chạy; mở file bằng trình soạn thảo văn bản và sao chép **toàn bộ một dòng JSON**.
+2. Trong Render Dashboard của dịch vụ bot, vào **Environment → Add Environment Variable**: Key `SESSION_JSON`, Value là một dòng JSON vừa sao chép. Chọn **Save and deploy**. Dịch vụ cũng cần có `config.json` hợp lệ; có thể cấp qua Render Secret File tên `config.json`.
+3. Xem log Render: dòng `Đã đăng nhập bằng SESSION_JSON.` xác nhận bot đã nạp phiên. Nếu phiên hết hạn, chạy lại bước 1 trên máy cá nhân và thay giá trị biến môi trường. Không dán JSON vào GitHub, chat, issue hay log.
+
+Nếu đặt `SESSION_JSON` ngay trên máy cá nhân, bot cũng dùng lại phiên mà không hiện QR. File `zalo-session.json` là thông tin đăng nhập nhạy cảm; giữ riêng tư và xóa bản sao không còn dùng. Đăng nhập bằng phiên chỉ hoạt động khi Zalo vẫn chấp nhận cookie, IMEI và user agent đã lưu.
+
 ## Bản 1.8.0
 
 Bot đọc `description`/`desc` của tin kèm ảnh dù Zalo gửi loại tin khác `chat.photo`, và đọc được trường hợp dữ liệu ảnh là JSON dạng chữ. URL ảnh từ CDN trong `href`/`url` vẫn không bị xem là link quảng cáo. Tin chưa thấy link ở sự kiện trực tiếp không bị đánh dấu đã xử lý, để lần đọc lịch sử có thể kiểm tra lại caption. Nếu Zalo báo lỗi xóa, bot vẫn ghi đúng một lượt vi phạm cho tin đó và có thể thử xóa lại khi quét lịch sử.
@@ -19,7 +31,7 @@ npm ci
 npm start -- --list-groups
 ```
 
-Mở `zalo-login-qr.png` xuất hiện trong thư mục, quét bằng tài khoản Zalo quản trị nhóm. Lệnh sẽ in ID và tên các nhóm. Bot xóa file QR sau khi đăng nhập. Không chia sẻ mã QR hay file đăng nhập.
+Nếu chưa có `SESSION_JSON`, mở `zalo-login-qr.png` xuất hiện trong thư mục và quét bằng tài khoản Zalo quản trị nhóm. Lệnh sẽ in ID và tên các nhóm. Bot xóa file QR sau khi đăng nhập và lưu phiên vào `zalo-session.json`. Không chia sẻ mã QR hay file phiên.
 
 Sao chép `config.example.json` thành `config.json`. Điền một hoặc nhiều ID nhóm vào `groupIds`. Thêm ID của những người được phép đăng link vào `trustedUserIds`, và tên miền được phép vào `allowedDomains`. Danh sách mặc định rỗng nên mọi link đều bị lọc. Tên miền trong danh sách cũng cho phép các tên miền con. `zalo.me` không cho phép `evilzalo.me`. `blockZaloLinks: true` chặn mọi link `zalo.me` và tên miền con, kể cả khi cấu hình cũ đã thêm `zalo.me` vào `allowedDomains`. Nếu muốn cho phép link Zalo thường, đặt `blockZaloLinks: false`; giữ `blockZaloGroupInvites: true` để vẫn chặn link mời nhóm `/g/...`.
 
@@ -31,7 +43,7 @@ notepad config.json
 npm start
 ```
 
-Ban đầu `dryRun` là `true`: bot chỉ ghi dòng `[XEM TRƯỚC]` khi thấy tin phù hợp; không xóa tin, gửi cảnh báo hay ghi lượt vi phạm. Lệnh kick cũng không kick khi `dryRun` bật. Lúc khởi động bot in cảnh báo `[CHỈ XEM TRƯỚC]` nếu chế độ này còn bật, và in `[KIỂM TRA NHÓM]` gồm tên nhóm và quyền QTV của tài khoản bot. Gửi vài tin thử vào nhóm, kiểm tra log, rồi đổi `dryRun` thành `false` và chạy lại `npm start` để bật xử lý thật. Giữ cửa sổ PowerShell đang chạy; đóng cửa sổ sẽ dừng bot. Mỗi lần chạy cần quét QR lại.
+Ban đầu `dryRun` là `true`: bot chỉ ghi dòng `[XEM TRƯỚC]` khi thấy tin phù hợp; không xóa tin, gửi cảnh báo hay ghi lượt vi phạm. Lệnh kick cũng không kick khi `dryRun` bật. Lúc khởi động bot in cảnh báo `[CHỈ XEM TRƯỚC]` nếu chế độ này còn bật, và in `[KIỂM TRA NHÓM]` gồm tên nhóm và quyền QTV của tài khoản bot. Gửi vài tin thử vào nhóm, kiểm tra log, rồi đổi `dryRun` thành `false` và chạy lại `npm start` để bật xử lý thật. Giữ cửa sổ PowerShell đang chạy; đóng cửa sổ sẽ dừng bot. Muốn bỏ qua QR trên máy cá nhân, đặt biến môi trường `SESSION_JSON` bằng nội dung file phiên đã lưu.
 
 Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gửi một tin thử từ **tài khoản khác**. Dòng `[DEBUG]` cho biết `nguồn=live` hoặc `nguồn=history`, ID nhóm, loại tin, tên các trường dữ liệu và tên miền bot nhận được; bot không in nguyên nội dung tin. Xem thêm `trong_cấu_hình`, `tin_cậy`, `dryRun` và `quyết_định` để tìm lý do bị bỏ qua. Nếu có `[XEM TRƯỚC]`, đổi `dryRun` thành `false` và khởi động lại. Nếu có `[LỖI XÓA]`, tài khoản có thể thiếu quyền xóa tin của người khác hoặc API của thư viện đã thay đổi. `[API XÓA TRẢ VỀ]` chỉ cho biết thư viện đã nhận phản hồi; nếu tin còn hiển thị sau khi tải lại Zalo, kiểm tra quyền QTV và trạng thái thực tế của tin. Nếu không có `[DEBUG]` sau hơn một phút, kiểm tra `[KIỂM TRA LỊCH SỬ]`, kết nối Zalo, bot còn chạy và tài khoản đăng nhập đã ở trong nhóm.
 
@@ -70,7 +82,7 @@ Bot xác minh người ra lệnh là trưởng/phó nhóm hiện tại qua Zalo 
 
 Nếu nâng cấp từ bản bot trước: dừng bot, giữ lại `config.json` và `moderation-state.json`, thay các file mã nguồn bằng bản mới, chạy `npm ci`, rồi kiểm tra với `dryRun: true`. `blockZaloLinks`, `historySweepSeconds`, `violationWindowHours` và `reviewGroupId` là tùy chọn; cấu hình cũ vẫn chạy. Bot không đọc hoặc điều khiển mã của một bot khác đang chạy trên máy.
 
-Nếu lệnh xóa báo lỗi, kiểm tra quyền quản trị nhóm và tài khoản đăng nhập. Thư viện không chính thức có thể không tương thích khi Zalo cập nhật. Bot ghi ID nhóm, người gửi, tin và tên miền vào console để kiểm tra; file trạng thái lưu tối đa bốn link làm bằng chứng cho mỗi hồ sơ. Bot không lưu mật khẩu hoặc cookie đăng nhập.
+Nếu lệnh xóa báo lỗi, kiểm tra quyền quản trị nhóm và tài khoản đăng nhập. Thư viện không chính thức có thể không tương thích khi Zalo cập nhật. Bot ghi ID nhóm, người gửi, tin và tên miền vào console để kiểm tra; file trạng thái lưu tối đa bốn link làm bằng chứng cho mỗi hồ sơ. Khi đăng nhập QR, bot lưu cookie vào `zalo-session.json` và bỏ qua file này khi dùng Git.
 
 ## Kiểm tra
 

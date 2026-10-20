@@ -1,35 +1,23 @@
-import { readFile, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createServer } from "node:http";
-import { Zalo, ThreadType, LoginQRCallbackEventType } from "zca-js";
+import { Zalo, ThreadType } from "zca-js";
 import { checkMessage, extractMessageLinks } from "./policy.js";
 import { ModerationState } from "./moderation-state.js";
 import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
+import { loginWithSession } from "./session.js";
 
 const configPath = resolve(process.cwd(), "config.json");
-const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
 const listingGroups = process.argv.includes("--list-groups");
-const debug = process.argv.includes("--debug") || process.env.DEBUG === "true";
-
+const debug = process.argv.includes("--debug");
 let config;
 const validIds = (value) => Array.isArray(value) && value.every((id) => typeof id === "string" && id.trim());
-
 if (!listingGroups) {
-  if (process.env.CONFIG_JSON) {
-    try {
-      config = JSON.parse(process.env.CONFIG_JSON);
-    } catch {
-      console.error("Biến môi trường CONFIG_JSON không đúng định dạng JSON.");
-      process.exit(1);
-    }
-  } else {
-    try {
-      config = JSON.parse(await readFile(configPath, "utf8"));
-    } catch {
-      console.error("Thiếu hoặc không đọc được config.json. Hãy sao chép config.example.json thành config.json hoặc đặt CONFIG_JSON.");
-      process.exit(1);
-    }
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    console.error("Thiếu hoặc không đọc được config.json. Hãy sao chép config.example.json thành config.json và sửa cấu hình.");
+    process.exit(1);
   }
   if (!validIds(config.groupIds) || config.groupIds.length === 0 || config.groupIds.some((id) => id === "THAY_BANG_ID_NHOM") ||
       !validIds(config.trustedUserIds) || !validIds(config.allowedDomains) || typeof config.dryRun !== "boolean" ||
@@ -46,79 +34,26 @@ if (!listingGroups) {
   }
 }
 
-// Khởi tạo HTTP Web Server nhẹ để xem QR trực tiếp trên web và giữ bot luôn thức (Render Free tier ping)
-let currentQRCodeBase64 = null;
-let botStatus = "Khởi tạo...";
-
-const PORT = process.env.PORT || 3000;
-const server = createServer(async (req, res) => {
-  if (req.url === "/health" || req.url === "/ping") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ status: "ok", botStatus, uptime: process.uptime() }));
-  }
-
-  if (req.url === "/qr" || req.url === "/") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    if (currentQRCodeBase64) {
-      return res.end(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Zalo Bot Login QR</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-        <body style="font-family:sans-serif;text-align:center;padding:30px;background:#f5f7fb;">
-          <h2>Quét mã QR để đăng nhập Zalo Bot</h2>
-          <p>Mở app Zalo trên điện thoại quét mã dưới đây để kích hoạt bot:</p>
-          <img src="data:image/png;base64,${currentQRCodeBase64}" style="max-width:320px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-          <p style="color:#666;margin-top:20px;">Trang sẽ tự làm mới sau 5 giây để kiểm tra trạng thái...</p>
-          <script>setTimeout(() => location.reload(), 5000);</script>
-        </body>
-        </html>
-      `);
-    } else {
-      return res.end(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Zalo Bot Status</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-        <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f5f7fb;">
-          <h2 style="color:#2b8a3e;">Bot Zalo Đang Hoạt Động!</h2>
-          <p>Trạng thái: <b>${botStatus}</b></p>
-          <p>Uptime: ${Math.floor(process.uptime())} giây</p>
-        </body>
-        </html>
-      `);
-    }
-  }
-
-  res.writeHead(404);
-  res.end();
-});
-
-server.listen(PORT, () => {
-  console.log(`Web Server lắng nghe tại cổng ${PORT} (URL: http://localhost:${PORT}/)`);
-});
-
 const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), "moderation-state.json"), {
   windowHours: config.violationWindowHours ?? 24,
 });
 
-const startedAt = Date.now();
+const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
 const zalo = new Zalo();
-console.log("Đang tạo mã QR đăng nhập...");
-botStatus = "Chờ quét mã QR";
-const api = await zalo.loginQR({ qrPath }, async (event) => {
-  if (event.type === LoginQRCallbackEventType.QRCodeGenerated) {
-    await event.actions.saveToFile(qrPath);
-    try {
-      const qrBuffer = await readFile(qrPath);
-      currentQRCodeBase64 = qrBuffer.toString("base64");
-    } catch {}
-    console.log(`Mở http://localhost:${PORT}/ hoặc file ${qrPath} để quét bằng tài khoản Zalo quản trị nhóm.`);
-  } else if (event.type === LoginQRCallbackEventType.QRCodeExpired) {
-    console.log("Mã QR hết hạn, đang tạo lại...");
-    event.actions.retry();
-  }
-});
-currentQRCodeBase64 = null;
-await unlink(qrPath).catch(() => {});
+let api;
+try {
+  api = await loginWithSession({
+    zalo,
+    sessionJson: process.env.SESSION_JSON,
+    qrPath,
+    sessionPath: resolve(process.cwd(), "zalo-session.json"),
+    isRender: process.env.RENDER === "true",
+  });
+} catch (error) {
+  console.error(`[ĐĂNG NHẬP] ${error.message}`);
+  process.exit(1);
+}
+const startedAt = Date.now();
 
 if (listingGroups) {
   const groups = await api.getAllGroups();
@@ -136,17 +71,14 @@ if (listingGroups) {
   process.exit(0);
 }
 
-botStatus = "Đang trực và lọc link";
-if (config.dryRun) {
-  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật: bot chỉ ghi nhận vi phạm, KHÔNG xóa tin hay kick thành viên.");
-}
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
-
+if (config.dryRun) console.warn("[CHỈ XEM TRƯỚC] dryRun=true: bot sẽ KHÔNG xóa tin, không ghi vi phạm và không kick.");
+if (config.blockZaloLinks === false) console.warn("[CẤU HÌNH] blockZaloLinks=false: link zalo.me ngoài /g/ có thể được phép.");
 try {
-  const ownId = String(api.ctx.uid ?? "");
+  const ownId = String(api.getOwnId());
   const info = await api.getGroupInfo(config.groupIds);
   for (const groupId of config.groupIds) {
-    const group = info?.gridInfoMap?.[groupId];
+    const group = info.gridInfoMap?.[groupId];
     if (!group) {
       console.warn(`[KIỂM TRA NHÓM] ${groupId}: tài khoản bot không lấy được thông tin nhóm. Kiểm tra groupIds và tài khoản đăng nhập.`);
       continue;
@@ -159,23 +91,17 @@ try {
 } catch (error) {
   console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
-
 const moderation = createModeration({ api, config, state });
 const seenMessages = new Map();
+const messagesInFlight = new Set();
 
 async function processMessage(message, { source = "live" } = {}) {
   if (source === "live" && await moderation.handleCommand(message)) return;
   if (message.type !== ThreadType.Group) return;
   if (source === "history" && typeof message.data?.content === "string" &&
       /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
-
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
-  if (messageKey) {
-    if (seenMessages.has(messageKey)) return;
-    seenMessages.set(messageKey, Date.now());
-    if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
-  }
-
+  if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
   if (debug) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
@@ -184,10 +110,10 @@ async function processMessage(message, { source = "live" } = {}) {
   }
   const result = checkMessage(message, config);
   if (!result) {
-    if (debug) console.log(`[DEBUG] nguồn=${source} quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)`);
+    if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)");
     return;
   }
-  if (debug) console.log(`[DEBUG] nguồn=${source} quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
+  if (debug) console.log(`[DEBUG] quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
 
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
@@ -195,30 +121,41 @@ async function processMessage(message, { source = "live" } = {}) {
     return;
   }
   const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
-  if (config.dryRun) {
-    console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
-    await moderation.onViolation(message, result);
-    return;
-  }
+  if (messageKey) messagesInFlight.add(messageKey);
   try {
-    const response = await api.deleteMessage({
-      type: ThreadType.Group,
-      threadId: message.threadId,
-      data: { msgId, cliMsgId, uidFrom },
-    }, false);
-    console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
-  } catch (error) {
-    console.error(`[LỖI XÓA] ${details}`, error);
+    if (config.dryRun) {
+      console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
+    } else {
+      let response;
+      try {
+        response = await api.deleteMessage({
+          type: ThreadType.Group,
+          threadId: message.threadId,
+          data: { msgId, cliMsgId, uidFrom },
+        }, false);
+      } catch (error) {
+        console.error(`[LỖI XÓA] ${details}`, error);
+        // A detected link still counts once; leave it eligible for a later delete retry.
+        await moderation.onViolation(message, result);
+        return;
+      }
+      console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
+    }
+    if (messageKey) {
+      seenMessages.set(messageKey, Date.now());
+      if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
+    }
+    await moderation.onViolation(message, result);
+  } finally {
+    if (messageKey) messagesInFlight.delete(messageKey);
   }
-  await moderation.onViolation(message, result);
 }
 
 api.listener.on("message", (message) => {
-  void processMessage(message, { source: "live" }).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
+  void processMessage(message).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
 });
 api.listener.on("error", (error) => console.error("Lỗi kết nối Zalo:", error));
 api.listener.start();
-
 if (config.historySweepSeconds !== 0) {
   const seconds = config.historySweepSeconds ?? 60;
   const sweepHistory = createHistorySweep({

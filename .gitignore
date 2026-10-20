@@ -1,5 +1,7 @@
 node_modules/
 config.json
 zalo-login-qr.png
-session.json
+zalo-session.json
+moderation-state.json
+moderation-state.json.tmp
 *.log
