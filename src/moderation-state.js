@@ -33,7 +33,7 @@ export class ModerationState {
     this.data.manualKicks = this.data.manualKicks.filter((item) => item.at > now - 30 * DAY_MS).slice(-200);
   }
 
-  recordViolation({ groupId, userId, messageId, links }) {
+  recordViolation({ groupId, userId, messageId, links, displayName }) {
     this.prune();
     if (this.data.incidents.some((item) => item.groupId === groupId && item.messageId === messageId)) {
       return { duplicate: true };
@@ -49,7 +49,7 @@ export class ModerationState {
     if (recent.length > 3 && !pendingCase) {
       pendingCase = {
         id: randomBytes(4).toString("hex").toUpperCase(),
-        groupId, userId, status: "pending", createdAt: this.now(),
+        groupId, userId, displayName, status: "pending", createdAt: this.now(),
         expiresAt: this.now() + this.windowMs,
         evidence: recent.slice(-4), notifiedIds: [],
       };

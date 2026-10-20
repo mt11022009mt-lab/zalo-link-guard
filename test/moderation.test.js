@@ -62,8 +62,23 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   const pending = state.listPending();
   assert.equal(pending.length, 1);
   assert.equal(pending[0].evidence.length, 4);
+  assert.equal(pending[0].displayName, "Người gửi");
   assert.equal(kicked.length, 0);
-  assert.ok(sent.some((item) => item.id === ADMIN && item.text.includes("/duyetkick")));
+  assert.ok(sent.some((item) => item.id === ADMIN && item.text.includes("Người gửi: @Người gửi") && !item.text.includes(`Người gửi: ${MEMBER}`)));
+  const notice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("Đã lập hồ sơ"));
+  assert.ok(notice);
+  assert.deepEqual(notice.text.mentions, [{
+    pos: notice.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
+  }]);
+
+  await moderation.handleCommand(approval("/vipham"));
+  const list = sent.at(-1);
+  assert.equal(list.id, GROUP);
+  assert.equal(typeof list.text, "object");
+  assert.equal(list.text.msg.includes(MEMBER), false);
+  assert.deepEqual(list.text.mentions, [{
+    pos: list.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
+  }]);
 
   await moderation.handleCommand(approval(`/duyetkick ${pending[0].id}`, MEMBER));
   assert.equal(kicked.length, 0);
@@ -71,6 +86,27 @@ test("four zalo.me messages create a review case; only a live admin approval kic
   assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
   await moderation.handleCommand(approval(`/duyetkick ${pending[0].id}`));
   assert.equal(kicked.length, 1);
+});
+
+test("old pending cases use the current group name for a real mention", async (t) => {
+  const { api, state, sent, moderation } = fixture(t);
+  const otherMember = "900005";
+  for (let id = 1; id <= 4; id++) {
+    state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: String(id), links: [{ url: "spam.site" }] });
+    state.recordViolation({ groupId: GROUP, userId: otherMember, messageId: `other-${id}`, links: [{ url: "spam.site" }] });
+  }
+  api.getGroupInfo = async (id) => ({ gridInfoMap: { [id]: {
+    creatorId: OWNER, adminIds: [BOT, ADMIN], currentMems: [
+      { id: MEMBER, dName: "Tên mới" }, { id: otherMember, dName: "Người thứ hai" },
+    ],
+  } } });
+  await moderation.handleCommand(approval("/vipham"));
+  const list = sent.at(-1);
+  assert.equal(list.text.msg.includes("@Tên mới"), true);
+  assert.deepEqual(list.text.mentions, [
+    { pos: list.text.msg.indexOf("@Tên mới"), uid: MEMBER, len: "@Tên mới".length },
+    { pos: list.text.msg.indexOf("@Người thứ hai"), uid: otherMember, len: "@Người thứ hai".length },
+  ]);
 });
 
 test("manual /kick requires one real tag and a current group admin", async (t) => {

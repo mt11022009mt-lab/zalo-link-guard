@@ -10,7 +10,8 @@ export function extractLinks(content) {
     .replace(/\[\s*\.\s*\]|\(\s*\.\s*\)/g, ".")
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(/[\u3002\uFF0E\uFF61]/g, ".")
-    .replace(/hxxps?:\/\//gi, "https://");
+    .replace(/hxxps?:\/\//gi, "https://")
+    .replace(/(\b(?:www\.)?zalo\.me\/g\/)\r?\n[ \t]*([a-z\d_-]+)/gi, "$1$2");
 
   return [...text.matchAll(LINK_RE)].flatMap(([match]) => {
     try {
@@ -33,8 +34,10 @@ export function extractMessageLinks(message) {
   // Photos/files can carry CDN URLs in href/url. Only their user-written
   // caption is checked; link previews expose the shared target in href/url.
   const fields = isLinkPreview
-    ? [content.href, content.url, content.title, content.description, content.text, content.caption]
-    : [content.caption, content.text, content.message];
+    ? [content.href, content.url, content.title, content.description, content.text, content.caption, content.msg]
+    : [content.caption, content.text, content.message, content.msg, content.body,
+        typeof content.content === "string" ? content.content : undefined,
+        content.data?.text, content.data?.caption, content.data?.msg];
   return extractLinks(fields.filter((value) => typeof value === "string").join(" "));
 }
 

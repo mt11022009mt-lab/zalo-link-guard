@@ -24,12 +24,44 @@ function isAdmin(info, userId) {
     (info.adminIds ?? []).some((id) => String(id) === String(userId));
 }
 
-function describeCase(item) {
+function safeDisplayName(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().replace(/^@+/, "").slice(0, 60) || "Thành viên";
+}
+
+function caseDisplayName(item, info) {
+  const member = info?.currentMems?.find((person) => String(person.id) === String(item.userId));
+  return safeDisplayName(item.displayName || member?.dName || member?.zaloName);
+}
+
+function describeCase(item, info, { compact = false } = {}) {
+  const mentionText = `@${caseDisplayName(item, info)}`;
+  const prefix = compact
+    ? `#${item.id} | Nhóm ${item.groupId} | `
+    : `HỒ SƠ VI PHẠM #${item.id}\nNhóm: ${item.groupId}\nNgười gửi: `;
+  const mention = { pos: prefix.length, uid: String(item.userId), len: mentionText.length };
+  if (compact) {
+    return { msg: `${prefix}${mentionText} | ${item.evidence.length} lần | /duyetkick ${item.id} | /tuchoikick ${item.id}`, mention };
+  }
   const evidence = item.evidence.map((entry, index) => {
     const time = new Date(entry.at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     return `${index + 1}. ${time} | tin ${entry.messageId} | ${entry.links.join(", ")}`;
   }).join("\n");
-  return `HỒ SƠ VI PHẠM #${item.id}\nNhóm: ${item.groupId}\nNgười gửi: ${item.userId}\n${item.evidence.length} lần gửi link bị cấm trong 24 giờ:\n${evidence}\n\nDuyệt kick: /duyetkick ${item.id}\nTừ chối: /tuchoikick ${item.id}\nBot KHÔNG tự kick khi chưa được duyệt.`;
+  return {
+    msg: `${prefix}${mentionText}\n${item.evidence.length} lần gửi link bị cấm trong 24 giờ:\n${evidence}\n\nDuyệt kick: /duyetkick ${item.id}\nTừ chối: /tuchoikick ${item.id}\nBot KHÔNG tự kick khi chưa được duyệt.`,
+    mention,
+  };
+}
+
+function combineCases(entries) {
+  let msg = "";
+  const mentions = [];
+  for (const entry of entries) {
+    if (msg) msg += "\n\n";
+    const offset = msg.length;
+    msg += entry.msg;
+    mentions.push({ ...entry.mention, pos: offset + entry.mention.pos });
+  }
+  return { msg, mentions };
 }
 
 export function createModeration({ api, config, state, log = console }) {
@@ -53,9 +85,9 @@ export function createModeration({ api, config, state, log = console }) {
     }
   }
 
-  async function groupNotice(groupId, text) {
+  async function groupNotice(groupId, message) {
     try {
-      await api.sendMessage(text, groupId, ThreadType.Group);
+      await api.sendMessage(message, groupId, ThreadType.Group);
     } catch (error) {
       log.error("Không gửi được thông báo vào nhóm:", error);
     }
@@ -66,7 +98,7 @@ export function createModeration({ api, config, state, log = console }) {
     let sent = 0;
     if (config.reviewGroupId) {
       try {
-        await api.sendMessage(summary, config.reviewGroupId, ThreadType.Group);
+        await api.sendMessage(summary.msg, config.reviewGroupId, ThreadType.Group);
         sent++;
       } catch (error) {
         log.error("Không gửi được hồ sơ tới nhóm QTV:", error);
@@ -84,7 +116,7 @@ export function createModeration({ api, config, state, log = console }) {
     for (const adminId of admins) {
       if (item.notifiedIds.includes(adminId)) continue;
       try {
-        await api.sendMessage(summary, adminId, ThreadType.User);
+        await api.sendMessage(summary.msg, adminId, ThreadType.User);
         state.markNotified(item.id, adminId);
         sent++;
       } catch (error) {
@@ -98,18 +130,27 @@ export function createModeration({ api, config, state, log = console }) {
     const groupId = String(message.threadId);
     const userId = String(message.data.uidFrom);
     const messageId = String(message.data.msgId);
+    const displayName = message.data.dName ? safeDisplayName(message.data.dName) : undefined;
+    const mentionText = `@${displayName ?? "Thành viên"}`;
     if (config.dryRun) {
       log.info(`[XEM TRƯỚC] Sẽ ghi một vi phạm của ${userId} trong nhóm ${groupId}; chưa gửi cảnh báo hoặc kick.`);
       return;
     }
-    const recorded = state.recordViolation({ groupId, userId, messageId, links: result.links });
+    const recorded = state.recordViolation({ groupId, userId, messageId, links: result.links, displayName });
     if (recorded.duplicate) return;
     if (recorded.count <= 3) {
-      const name = String(message.data.dName || userId).replace(/\s+/g, " ").slice(0, 60);
-      await groupNotice(groupId, `⚠️ ${name} đã gửi link không được phép ${recorded.count}/3 lần trong 24 giờ. Lần tiếp theo sẽ chuyển hồ sơ cho QTV duyệt kick.`);
+      const prefix = "⚠️ ";
+      await groupNotice(groupId, {
+        msg: `${prefix}${mentionText} đã gửi link không được phép ${recorded.count}/3 lần trong 24 giờ. Lần tiếp theo sẽ chuyển hồ sơ cho QTV duyệt kick.`,
+        mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
+      });
     } else if (recorded.newCase) {
       const sent = await notifyAdmins(recorded.pendingCase);
-      await groupNotice(groupId, `⚠️ Đã lập hồ sơ #${recorded.pendingCase.id} cho thành viên ${userId} sau ${recorded.count} lần gửi link. QTV sẽ duyệt trước khi kick.${sent ? "" : " Chưa gửi được hồ sơ riêng cho QTV; kiểm tra quyền nhắn tin hoặc nhóm duyệt."}`);
+      const prefix = `⚠️ Đã lập hồ sơ #${recorded.pendingCase.id} cho `;
+      await groupNotice(groupId, {
+        msg: `${prefix}${mentionText} sau ${recorded.count} lần gửi link. QTV sẽ duyệt trước khi kick.${sent ? "" : " Chưa gửi được hồ sơ riêng cho QTV; kiểm tra quyền nhắn tin hoặc nhóm duyệt."}`,
+        mentions: [{ pos: prefix.length, uid: userId, len: mentionText.length }],
+      });
     }
   }
 
@@ -182,7 +223,7 @@ export function createModeration({ api, config, state, log = console }) {
       for (const item of pending) {
         try {
           const info = await groupInfo(item.groupId);
-          if (isAdmin(info, senderId)) visible.push(item);
+          if (isAdmin(info, senderId)) visible.push({ item, info });
         } catch (error) {
           log.error("Không kiểm tra được quyền QTV khi liệt kê hồ sơ:", error);
         }
@@ -191,13 +232,27 @@ export function createModeration({ api, config, state, log = console }) {
         await reply(message, "Không có hồ sơ chờ duyệt mà bạn có quyền xem.");
         return true;
       }
-      const summary = visible.slice(0, 10).map(describeCase).join("\n\n---\n\n");
+      const inOriginalGroup = message.type === ThreadType.Group && config.groupIds.includes(String(message.threadId));
+      const selected = inOriginalGroup
+        ? visible.filter(({ item }) => item.groupId === String(message.threadId)).slice(0, 10)
+        : visible.slice(0, 10);
+      if (!selected.length) {
+        await reply(message, "Nhóm này không có hồ sơ chờ duyệt.");
+        return true;
+      }
+      const summary = combineCases(selected.map(({ item, info }) => describeCase(item, info, { compact: inOriginalGroup })));
       try {
-        await api.sendMessage(summary, senderId, ThreadType.User);
-        await reply(message, `Đã gửi riêng ${Math.min(visible.length, 10)} hồ sơ chờ duyệt cho QTV.`);
+        if (inOriginalGroup) {
+          await api.sendMessage(summary, message.threadId, ThreadType.Group);
+        } else {
+          await api.sendMessage(summary.msg, senderId, ThreadType.User);
+          await reply(message, `Đã gửi riêng ${selected.length} hồ sơ chờ duyệt cho QTV.`);
+        }
       } catch (error) {
         log.error("Không gửi được danh sách vi phạm riêng:", error);
-        await reply(message, "Không gửi được danh sách riêng. Hãy kiểm tra quyền nhắn tin với tài khoản bot.");
+        await reply(message, inOriginalGroup
+          ? "Không gửi được danh sách có tag vào nhóm. Hãy kiểm tra quyền nhắn tin của bot."
+          : "Không gửi được danh sách riêng. Hãy kiểm tra quyền nhắn tin với tài khoản bot.");
       }
       return true;
     }

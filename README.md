@@ -17,7 +17,7 @@ Mở `zalo-login-qr.png` xuất hiện trong thư mục, quét bằng tài kho�
 
 Sao chép `config.example.json` thành `config.json`. Điền một hoặc nhiều ID nhóm vào `groupIds`. Thêm ID của những người được phép đăng link vào `trustedUserIds`, và tên miền được phép vào `allowedDomains`. Danh sách mặc định rỗng nên mọi link đều bị lọc. Tên miền trong danh sách cũng cho phép các tên miền con. `zalo.me` không cho phép `evilzalo.me`. `blockZaloLinks: true` chặn mọi link `zalo.me` và tên miền con, kể cả khi cấu hình cũ đã thêm `zalo.me` vào `allowedDomains`. Nếu muốn cho phép link Zalo thường, đặt `blockZaloLinks: false`; giữ `blockZaloGroupInvites: true` để vẫn chặn link mời nhóm `/g/...`.
 
-`violationWindowHours` mặc định là `24`. Nhóm được giám sát cần có ít nhất một QTV là người thật, khác tài khoản chạy bot, để duyệt hồ sơ. Nếu bạn có **nhóm riêng chỉ dành cho QTV** mà tài khoản bot là thành viên, có thể thêm `"reviewGroupId": "ID_NHOM_QTV"` vào `config.json`. Bot sẽ gửi hồ sơ vào nhóm đó và nhắn riêng cho trưởng/phó nhóm. Nếu không có `reviewGroupId`, bot chỉ nhắn riêng cho các QTV. Zalo có thể từ chối tin nhắn riêng; bot sẽ ghi lỗi và giữ hồ sơ chờ duyệt.
+`violationWindowHours` mặc định là `24`. `historySweepSeconds` mặc định là `60`: mỗi phút bot đọc 50 tin gần nhất trong mỗi nhóm để nhặt tin **mới từ khi bot khởi động** mà kết nối nhận tin đã lỡ. Đặt `0` để tắt; giá trị khác phải từ `30` đến `300` giây. Bot không quét tin cũ trước lúc khởi động. Nhóm quá nhiều tin trong một phút vẫn có thể vượt quá 50 tin gần nhất. Nhóm được giám sát cần có ít nhất một QTV là người thật, khác tài khoản chạy bot, để duyệt hồ sơ. Nếu bạn có **nhóm riêng chỉ dành cho QTV** mà tài khoản bot là thành viên, có thể thêm `"reviewGroupId": "ID_NHOM_QTV"` vào `config.json`. Bot sẽ gửi hồ sơ vào nhóm đó và nhắn riêng cho trưởng/phó nhóm. Nếu không có `reviewGroupId`, bot chỉ nhắn riêng cho các QTV. Zalo có thể từ chối tin nhắn riêng; bot sẽ ghi lỗi và giữ hồ sơ chờ duyệt.
 
 ```powershell
 Copy-Item config.example.json config.json
@@ -25,18 +25,18 @@ notepad config.json
 npm start
 ```
 
-Ban đầu `dryRun` là `true`: bot chỉ ghi dòng `[XEM TRƯỚC]` khi thấy tin phù hợp; không xóa tin, gửi cảnh báo hay ghi lượt vi phạm. Lệnh kick cũng không kick khi `dryRun` bật. Gửi vài tin thử vào nhóm, kiểm tra log, rồi đổi `dryRun` thành `false` và chạy lại `npm start` để bật xử lý thật. Giữ cửa sổ PowerShell đang chạy; đóng cửa sổ sẽ dừng bot. Mỗi lần chạy cần quét QR lại.
+Ban đầu `dryRun` là `true`: bot chỉ ghi dòng `[XEM TRƯỚC]` khi thấy tin phù hợp; không xóa tin, gửi cảnh báo hay ghi lượt vi phạm. Lệnh kick cũng không kick khi `dryRun` bật. Lúc khởi động bot in cảnh báo `[CHỈ XEM TRƯỚC]` nếu chế độ này còn bật, và in `[KIỂM TRA NHÓM]` gồm tên nhóm và quyền QTV của tài khoản bot. Gửi vài tin thử vào nhóm, kiểm tra log, rồi đổi `dryRun` thành `false` và chạy lại `npm start` để bật xử lý thật. Giữ cửa sổ PowerShell đang chạy; đóng cửa sổ sẽ dừng bot. Mỗi lần chạy cần quét QR lại.
 
-Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gửi một tin thử từ **tài khoản khác**. Dòng `[DEBUG]` cho biết ID nhóm, loại tin, tên các trường dữ liệu và tên miền bot nhận được; bot không in nguyên nội dung tin. Xem thêm `trong_cấu_hình`, `tin_cậy`, `dryRun` và `quyết_định` để tìm lý do bị bỏ qua. Nếu có `[XEM TRƯỚC]`, đổi `dryRun` thành `false` và khởi động lại. Nếu có `[LỖI XÓA]`, tài khoản có thể thiếu quyền xóa tin của người khác hoặc API của thư viện đã thay đổi. Nếu không có `[DEBUG]`, kiểm tra kết nối Zalo và việc tài khoản đăng nhập đã ở trong nhóm.
+Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gửi một tin thử từ **tài khoản khác**. Dòng `[DEBUG]` cho biết `nguồn=live` hoặc `nguồn=history`, ID nhóm, loại tin, tên các trường dữ liệu và tên miền bot nhận được; bot không in nguyên nội dung tin. Xem thêm `trong_cấu_hình`, `tin_cậy`, `dryRun` và `quyết_định` để tìm lý do bị bỏ qua. Nếu có `[XEM TRƯỚC]`, đổi `dryRun` thành `false` và khởi động lại. Nếu có `[LỖI XÓA]`, tài khoản có thể thiếu quyền xóa tin của người khác hoặc API của thư viện đã thay đổi. `[API XÓA TRẢ VỀ]` chỉ cho biết thư viện đã nhận phản hồi; nếu tin còn hiển thị sau khi tải lại Zalo, kiểm tra quyền QTV và trạng thái thực tế của tin. Nếu không có `[DEBUG]` sau hơn một phút, kiểm tra `[KIỂM TRA LỊCH SỬ]`, kết nối Zalo, bot còn chạy và tài khoản đăng nhập đã ở trong nhóm.
 
 ## Quy tắc lọc
 
 - Chỉ xử lý tin của người khác trong `groupIds`.
 - Bỏ qua người trong `trustedUserIds`.
-- Nhận dạng link dạng `https://`, `www.`, tên miền thường gặp, `hxxps://` và dấu chấm viết thành `[.]`.
+- Nhận dạng link dạng `https://`, `www.`, tên miền thường gặp, `hxxps://` và dấu chấm viết thành `[.]`. Link `zalo.me/g/` bị xuống dòng trước mã mời cũng được ghép lại.
 - Nếu tin chứa ít nhất một tên miền ngoài `allowedDomains`, bot thử xóa **cả tin**. Vì vậy, hãy thêm các tên miền hợp lệ trước khi bật xóa.
 - Mọi link `zalo.me` luôn bị lọc theo cấu hình mặc định, kể cả khi `allowedDomains` có `zalo.me`. Có thể điều chỉnh bằng `blockZaloLinks` và `blockZaloGroupInvites`.
-- Bot đọc văn bản, chú thích ảnh/file, và tin xem trước link `chat.link` hoặc `chat.recommended`. Đường dẫn nội bộ của ảnh và file không bị coi là link quảng cáo. Link giấu trong ảnh hoặc mã QR cần OCR và hiện chưa được đọc.
+- Bot đọc văn bản, một số dạng nội dung văn bản được Zalo gói trong object, chú thích ảnh/file, và tin xem trước link `chat.link` hoặc `chat.recommended`. Đường dẫn nội bộ của ảnh và file không bị coi là link quảng cáo. Link giấu trong ảnh hoặc mã QR cần OCR và hiện chưa được đọc.
 
 ## Cảnh báo, duyệt và kick
 
@@ -50,6 +50,8 @@ QTV của nhóm có thể gửi các lệnh sau trong nhóm gốc hoặc nhắn 
 /tuchoikick MA_HO_SO     Từ chối hồ sơ, đặt lại bộ đếm
 ```
 
+Khi QTV gửi `/vipham` **trong nhóm gốc**, bot trả danh sách ngắn ngay tại nhóm với tag `@TênThànhViên` thật để bấm xem người vi phạm. Thông báo lập hồ sơ trong nhóm cũng tag người đó. Khi gửi `/vipham` qua tin riêng hoặc trong nhóm QTV riêng, bot gửi hồ sơ qua tin riêng với `@TênThànhViên` dạng chữ; bot chỉ gắn mention thật ở nhóm gốc. UID vẫn được lưu nội bộ để duyệt kick chính xác nhưng không hiện làm tên chính của người vi phạm. Hồ sơ cũ sẽ lấy tên hiện tại từ danh sách thành viên nhóm nếu có.
+
 Lệnh trực tiếp dưới đây chỉ dùng **trong nhóm gốc**:
 
 ```text
@@ -58,9 +60,9 @@ Lệnh trực tiếp dưới đây chỉ dùng **trong nhóm gốc**:
 
 Bot xác minh người ra lệnh là trưởng/phó nhóm hiện tại qua Zalo trước mỗi lần kick. Bot không chấp nhận `@all`, nhiều tag, QTV, tài khoản bot, hoặc người trong `trustedUserIds` làm mục tiêu. Lệnh `/kick @tag` là hành động trực tiếp của QTV nên không đi qua hồ sơ vi phạm. Nếu QTV bấm `/duyetkick`, bot kiểm tra lại hồ sơ, quyền QTV và mục tiêu trước khi gọi API kick.
 
-`moderation-state.json` lưu các lần vi phạm, link, hồ sơ và lịch sử kick trên máy chạy bot; file này không nằm trong ZIP hay Git. Giữ file này riêng tư. Đừng xóa file khi bot đang chạy. Nếu tin riêng tới QTV bị chặn, có thể cấu hình nhóm QTV riêng qua `reviewGroupId` để nhận hồ sơ.
+`moderation-state.json` lưu các lần vi phạm, link, tên hiển thị, hồ sơ và lịch sử kick trên máy chạy bot; file này không nằm trong ZIP hay Git. Giữ file này riêng tư. Đừng xóa file khi bot đang chạy. Nếu tin riêng tới QTV bị chặn, có thể cấu hình nhóm QTV riêng qua `reviewGroupId` để nhận hồ sơ.
 
-Nếu nâng cấp từ bản bot trước: dừng bot, giữ lại `config.json` và `moderation-state.json`, thay các file mã nguồn bằng bản mới, chạy `npm ci`, rồi kiểm tra với `dryRun: true`. `blockZaloLinks`, `violationWindowHours` và `reviewGroupId` là tùy chọn; cấu hình cũ vẫn chạy. Bot không đọc hoặc điều khiển mã của một bot khác đang chạy trên máy.
+Nếu nâng cấp từ bản bot trước: dừng bot, giữ lại `config.json` và `moderation-state.json`, thay các file mã nguồn bằng bản mới, chạy `npm ci`, rồi kiểm tra với `dryRun: true`. `blockZaloLinks`, `historySweepSeconds`, `violationWindowHours` và `reviewGroupId` là tùy chọn; cấu hình cũ vẫn chạy. Bot không đọc hoặc điều khiển mã của một bot khác đang chạy trên máy.
 
 Nếu lệnh xóa báo lỗi, kiểm tra quyền quản trị nhóm và tài khoản đăng nhập. Thư viện không chính thức có thể không tương thích khi Zalo cập nhật. Bot ghi ID nhóm, người gửi, tin và tên miền vào console để kiểm tra; file trạng thái lưu tối đa bốn link làm bằng chứng cho mỗi hồ sơ. Bot không lưu mật khẩu hoặc cookie đăng nhập.
 

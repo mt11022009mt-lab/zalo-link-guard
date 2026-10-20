@@ -5,6 +5,7 @@ import { Zalo, ThreadType, LoginQRCallbackEventType } from "zca-js";
 import { checkMessage, extractMessageLinks } from "./policy.js";
 import { ModerationState } from "./moderation-state.js";
 import { createModeration } from "./moderation.js";
+import { createHistorySweep } from "./history-sweep.js";
 
 const configPath = resolve(process.cwd(), "config.json");
 const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
@@ -37,7 +38,9 @@ if (!listingGroups) {
       (config.reviewGroupId !== undefined && (typeof config.reviewGroupId !== "string" || !config.reviewGroupId.trim() ||
         config.groupIds.includes(config.reviewGroupId))) ||
       (config.violationWindowHours !== undefined && (!Number.isInteger(config.violationWindowHours) ||
-        config.violationWindowHours < 1 || config.violationWindowHours > 168))) {
+        config.violationWindowHours < 1 || config.violationWindowHours > 168)) ||
+      (config.historySweepSeconds !== undefined && (config.historySweepSeconds !== 0 &&
+        (!Number.isInteger(config.historySweepSeconds) || config.historySweepSeconds < 30 || config.historySweepSeconds > 300)))) {
     console.error("Cấu hình không hợp lệ. Kiểm tra groupIds, trustedUserIds, allowedDomains, reviewGroupId, violationWindowHours và dryRun trong config.json.");
     process.exit(1);
   }
@@ -133,31 +136,46 @@ if (listingGroups) {
 }
 
 botStatus = "Đang trực và lọc link";
+if (config.dryRun) {
+  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật trong config.json: bot ghi nhận vi phạm nhưng KHÔNG xóa tin hay kick thành viên.");
+}
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
 const moderation = createModeration({ api, config, state });
 
-async function processMessage(message) {
+for (const groupId of config.groupIds) {
+  try {
+    const info = await api.getGroupInfo(groupId);
+    const group = info?.gridInfoMap?.[groupId];
+    const role = group ? (group.creatorId === api.ctx.uid ? "Trưởng nhóm" : group.adminIds?.includes(api.ctx.uid) ? "Phó nhóm" : "Thành viên thường (THIẾU QUYỀN QTV)") : "Không rõ";
+    console.log(`[KIỂM TRA NHÓM] ID=${groupId} Tên="${group?.name ?? "N/A"}" Quyền=${role}`);
+  } catch (error) {
+    console.warn(`[KIỂM TRA NHÓM] ID=${groupId} Không lấy được thông tin:`, error.message);
+  }
+}
+
+async function processMessage(message, options = {}) {
+  const source = options.source ?? "live";
   if (await moderation.handleCommand(message)) return;
   if (message.type !== ThreadType.Group) return;
   if (debug) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
     const keys = content && typeof content === "object" ? Object.keys(content).slice(0, 12).join(",") : "-";
-    console.log(`[DEBUG] nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} loại=${message.data?.msgType ?? "?"} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
+    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} loại=${message.data?.msgType ?? "?"} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
   }
   const result = checkMessage(message, config);
   if (!result) {
-    if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)");
+    if (debug) console.log(`[DEBUG] nguồn=${source} quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)`);
     return;
   }
-  if (debug) console.log(`[DEBUG] quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
+  if (debug) console.log(`[DEBUG] nguồn=${source} quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
 
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
-    console.warn("Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.");
+    console.warn(`[${source}] Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.`);
     return;
   }
-  const details = `nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
+  const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
   if (config.dryRun) {
     console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
     await moderation.onViolation(message, result);
@@ -177,7 +195,23 @@ async function processMessage(message) {
 }
 
 api.listener.on("message", (message) => {
-  void processMessage(message).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
+  void processMessage(message, { source: "live" }).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
 });
 api.listener.on("error", (error) => console.error("Lỗi kết nối Zalo:", error));
 api.listener.start();
+
+const sweepIntervalSeconds = config.historySweepSeconds ?? 60;
+if (sweepIntervalSeconds > 0) {
+  const startedAt = Date.now();
+  const sweepHistory = createHistorySweep({
+    api,
+    groupIds: config.groupIds,
+    startedAt,
+    processMessage,
+  });
+  const sweepTimer = setInterval(() => {
+    void sweepHistory().catch((error) => console.error("[QUÉT LỊCH SỬ] Lỗi định kỳ:", error));
+  }, sweepIntervalSeconds * 1000);
+  if (typeof sweepTimer.unref === "function") sweepTimer.unref();
+  console.log(`Đã bật quét vét lịch sử định kỳ mỗi ${sweepIntervalSeconds}s cho tin mới từ lúc khởi động.`);
+}

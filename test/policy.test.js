@@ -13,6 +13,7 @@ test("detects plain, obfuscated and attachment links", () => {
   assert.equal(extractLinks({ href: "https://spam.com", description: "quảng cáo" }).length, 1);
   assert.equal(extractLinks("Xem ngay https://spam.site/abc").length, 1);
   assert.equal(extractLinks("za\u200blo。me").length, 1);
+  assert.equal(extractLinks("https://zalo.me/g/\nabc123")[0].url, "https://zalo.me/g/abc123");
 });
 
 test("only blocks external links in configured groups from untrusted senders", () => {
@@ -26,6 +27,8 @@ test("only blocks external links in configured groups from untrusted senders", (
   assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", caption: "zalo.me/abc" }, "member", "group-1", "chat.photo"), config));
   assert.ok(checkMessage(message({ href: "https://spam.com" }, "member", "group-1", "chat.link"), config));
   assert.ok(checkMessage(message({ href: "https://zalo.me/abc", title: "Mời tham gia" }, "member", "group-1", "chat.recommended"), config));
+  assert.ok(checkMessage(message({ msg: "BOX SHARE FILE https://zalo.me/g/\nabc123" }, "member", "group-1", "webchat"), config));
+  assert.ok(checkMessage(message({ data: { text: "https://zalo.me/g/abc123" } }, "member", "group-1", "webchat"), config));
 });
 
 test("blocks all zalo.me links with old allowlists, unless explicitly disabled", () => {
@@ -38,4 +41,13 @@ test("blocks all zalo.me links with old allowlists, unless explicitly disabled",
   assert.ok(checkMessage(message("https://zalo.me/g/abc123"), { ...config, blockZaloLinks: false }));
   assert.equal(checkMessage(message("https://zalo.me/oa/example"), { ...config, blockZaloLinks: false }), null);
   assert.equal(checkMessage(message("https://zalo.me/g/abc123"), { ...config, blockZaloLinks: false, blockZaloGroupInvites: false }), null);
+});
+
+test("long promotional text with two wrapped Zalo invites is still blocked", () => {
+  const content = "THAM GIA BOX TẠI ĐÂY 🔗\nBOX SHARE FILE VÀ VIDEO\nhttps://zalo.me/g/\nunyfs9xhtiqliir1zi6.   BOX CHAT VÀ SHARE FILE VÀ VIDEO\nhttps://zalo.me/g/\ntm80va7tprad9vmkerjr";
+  const result = checkMessage(message(content), config);
+  assert.deepEqual(result?.links.map((link) => link.url), [
+    "https://zalo.me/g/unyfs9xhtiqliir1zi6",
+    "https://zalo.me/g/tm80va7tprad9vmkerjr",
+  ]);
 });
