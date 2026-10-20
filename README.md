@@ -1,5 +1,11 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.8.0
+
+Bot đọc `description`/`desc` của tin kèm ảnh dù Zalo gửi loại tin khác `chat.photo`, và đọc được trường hợp dữ liệu ảnh là JSON dạng chữ. URL ảnh từ CDN trong `href`/`url` vẫn không bị xem là link quảng cáo. Tin chưa thấy link ở sự kiện trực tiếp không bị đánh dấu đã xử lý, để lần đọc lịch sử có thể kiểm tra lại caption. Nếu Zalo báo lỗi xóa, bot vẫn ghi đúng một lượt vi phạm cho tin đó và có thể thử xóa lại khi quét lịch sử.
+
+Sau khi thay bản cũ, **dừng tiến trình cũ rồi chạy bản 1.8.0**; chỉ thay file ZIP trên máy sẽ không cập nhật bot đang chạy. Giữ lại `config.json` và `moderation-state.json`. Nếu cùng một tin vẫn lọt, chạy `npm start -- --debug` và xem các dòng `[DEBUG]`, `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` lúc gửi tin thử. Không chia sẻ QR hoặc cookie đăng nhập.
+
 Bot theo dõi các nhóm Zalo bạn chỉ định và gửi lệnh xóa tin có đường link ngoài danh sách tên miền được phép. Bot dùng `zca-js`, một thư viện **không chính thức** đăng nhập Zalo Web bằng QR. Tài khoản chạy bot cần là trưởng nhóm hoặc phó nhóm có quyền xóa tin và kick thành viên. Zalo có thể thay đổi giao diện web hoặc hạn chế tài khoản; không có bảo đảm bot sẽ hoạt động mãi.
 
 Bot dùng `deleteMessage` để xóa tin. Bot chỉ dùng `removeUserFromGroup` khi QTV duyệt một hồ sơ đủ điều kiện hoặc chính QTV gửi lệnh `/kick @tag`. Mỗi lệnh kick chỉ có một ID thành viên. Hãy thử trong một nhóm nhỏ với `dryRun: true` trước khi bật thật.

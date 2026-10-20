@@ -26,25 +26,36 @@ export function extractLinks(content) {
 
 export function extractMessageLinks(message) {
   const content = message?.data?.content;
-  if (typeof content === "string") return extractLinks(content);
-  if (!content || typeof content !== "object") return [];
+  if (typeof content === "string") {
+    // Some message variants serialize their attachment data as JSON text.
+    // Scanning that text directly would mistake image CDN URLs for shared links.
+    if (/^\s*[\[{]/.test(content)) {
+      try {
+        const parsed = JSON.parse(content);
+        if (parsed && typeof parsed === "object") {
+          return extractMessageLinks({ data: { ...message.data, content: parsed } });
+        }
+      } catch { /* ordinary text */ }
+    }
+    return extractLinks(content);
+  }
+  if (!content || typeof content !== "object") return extractLinks([
+    message?.data?.caption, message?.data?.description,
+  ].filter((value) => typeof value === "string").join(" "));
 
   const msgType = String(message.data?.msgType ?? "").toLowerCase();
   const isLinkPreview = msgType === "chat.link" || msgType === "chat.recommended";
-  const hasMediaCaption = msgType === "chat.photo" || msgType === "chat.video.msg" ||
-    msgType === "chat.gif" || msgType === "share.file";
   // Photos/files can carry CDN URLs in href/url. Only their user-written
-  // caption is checked; link previews expose the shared target in href/url.
-  // Zalo photo captions are delivered in description (sometimes desc).
+  // text is checked; link previews expose the shared target in href/url.
+  // The same visible caption can arrive under different msgType values.
   const fields = isLinkPreview
     ? [content.href, content.url, content.title, content.description, content.text, content.caption, content.msg]
     : [content.caption, content.text, content.message, content.msg, content.body,
-        hasMediaCaption ? content.description : undefined,
-        hasMediaCaption ? content.desc : undefined,
+        content.description, content.desc,
         typeof content.content === "string" ? content.content : undefined,
         content.data?.text, content.data?.caption, content.data?.msg,
-        hasMediaCaption ? content.data?.description : undefined,
-        hasMediaCaption ? content.data?.desc : undefined];
+        content.data?.description, content.data?.desc,
+        message.data?.caption, message.data?.description];
   return extractLinks(fields.filter((value) => typeof value === "string").join(" "));
 }
 

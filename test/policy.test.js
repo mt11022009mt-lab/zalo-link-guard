@@ -26,6 +26,10 @@ test("only blocks external links in configured groups from untrusted senders", (
   assert.equal(checkMessage(message({ href: "https://cdn.example.com/photo.jpg" }, "member", "group-1", "chat.photo"), config), null);
   assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", caption: "zalo.me/abc" }, "member", "group-1", "chat.photo"), config));
   assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", description: "Vào https://zalo.me/g/abc123" }, "member", "group-1", "chat.photo"), config));
+  assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", description: "Ảnh kèm chữ https://zalo.me/g/abc123" }, "member", "group-1", "chat.album"), config));
+  assert.ok(checkMessage(message(JSON.stringify({ href: "https://cdn.example.com/photo.jpg", description: "Ảnh kèm chữ https://zalo.me/g/abc123" }), "member", "group-1", "chat.photo"), config));
+  assert.equal(checkMessage(message(JSON.stringify({ href: "https://cdn.example.com/photo.jpg", description: "Ảnh kỷ niệm" }), "member", "group-1", "chat.photo"), config), null);
+  assert.ok(checkMessage({ ...message(null, "member", "group-1", "chat.album"), data: { uidFrom: "member", caption: "https://zalo.me/g/abc123" } }, config));
   assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", desc: "spam.example.com" }, "member", "group-1", "chat.photo"), config));
   assert.equal(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", title: "album.example.com.jpg", description: "Ảnh kỷ niệm" }, "member", "group-1", "chat.photo"), config), null);
   assert.ok(checkMessage(message({ href: "https://cdn.example.com/video.mp4", description: "https://zalo.me/g/abc123" }, "member", "group-1", "chat.video.msg"), config));
