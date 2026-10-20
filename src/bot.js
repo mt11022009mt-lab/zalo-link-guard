@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Zalo, ThreadType } from "zca-js";
 import { checkMessage, extractMessageLinks } from "./policy.js";
-import { ModerationState } from "./moderation-state.js";
+import { createModerationState } from "./state-store.js";
 import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
@@ -44,9 +44,20 @@ if (!listingGroups) {
   }
 }
 
-const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), "moderation-state.json"), {
-  windowHours: config.violationWindowHours ?? 24,
-});
+let state = null;
+if (!listingGroups) {
+  try {
+    const opened = await createModerationState({ windowHours: config.violationWindowHours ?? 24 });
+    state = opened.state;
+    console.log(`[LƯU VI PHẠM] ${opened.storage}`);
+    if (process.env.RENDER === "true" && !process.env.DATABASE_URL && !process.env.STATE_DIR) {
+      console.warn("[LƯU VI PHẠM] SESSION_JSON chỉ giữ đăng nhập. Hãy gắn DATABASE_URL hoặc Render Persistent Disk + STATE_DIR để số lần vi phạm không mất khi dịch vụ khởi động lại.");
+    }
+  } catch (error) {
+    console.error(`[LƯU VI PHẠM] Không mở được nơi lưu trạng thái: ${error.message}`);
+    process.exit(1);
+  }
+}
 
 const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
 const zalo = new Zalo();
@@ -120,7 +131,7 @@ async function processMessage(message, { source = "live" } = {}) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
     const keys = content && typeof content === "object" ? Object.keys(content).slice(0, 12).join(",") : "-";
-    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} loại=${message.data?.msgType ?? "?"} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
+    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} loại=${message.data?.msgType ?? "?"} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
   }
   const result = checkMessage(message, config);
   if (!result) {
@@ -160,7 +171,6 @@ async function processMessage(message, { source = "live" } = {}) {
         }, false);
       } catch (error) {
         console.error(`[LỖI XÓA] ${details}`, error);
-        // A detected link still counts once; leave it eligible for a later delete retry.
         await moderation.onViolation(message, result);
         return;
       }

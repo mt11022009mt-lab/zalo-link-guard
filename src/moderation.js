@@ -127,6 +127,7 @@ export function createModeration({ api, config, state, log = console }) {
       try {
         await api.sendMessage(summary.msg, adminId, ThreadType.User);
         state.markNotified(item.id, adminId);
+        await state.flush();
         sent++;
       } catch (error) {
         log.error(`Không gửi được hồ sơ riêng tới QTV ${adminId}:`, error);
@@ -147,6 +148,7 @@ export function createModeration({ api, config, state, log = console }) {
     }
     const recorded = state.recordViolation({ groupId, userId, messageId, links: result.links, displayName });
     if (recorded.duplicate) return;
+    await state.flush();
     if (recorded.count <= 3) {
       const prefix = "⚠️ ";
       await groupNotice(groupId, {
@@ -206,14 +208,17 @@ export function createModeration({ api, config, state, log = console }) {
           return true;
         }
         const actionId = state.startManualKick({ groupId, userId: targetId, adminId: senderId });
+        await state.flush();
         try {
           await kickOne(targetId, groupId);
         } catch (error) {
           state.finishManualKick(actionId, { success: false, error: error.message });
+          await state.flush();
           throw error;
         }
         try {
           state.finishManualKick(actionId, { success: true });
+          await state.flush();
         } catch (error) {
           log.error("Zalo đã xác nhận kick nhưng không lưu được trạng thái:", error);
           await reply(message, `Zalo đã xác nhận kick ${targetId}, nhưng bot chưa lưu được trạng thái. Kiểm tra thành viên nhóm và file trạng thái trước khi ra lệnh tiếp.`);
@@ -289,6 +294,7 @@ export function createModeration({ api, config, state, log = console }) {
       if (!isAdmin(info, senderId) || !isAdmin(info, ownId)) throw new Error("Chỉ QTV nhóm có bot làm QTV mới được duyệt.");
       if (command === "tuchoikick") {
         state.setCaseStatus(caseId, "rejected", { reviewedBy: senderId, reviewedAt: Date.now() });
+        await state.flush();
         await reply(message, `Đã từ chối hồ sơ #${caseId}; bộ đếm vi phạm của thành viên được đặt lại.`);
         return true;
       }
@@ -302,14 +308,17 @@ export function createModeration({ api, config, state, log = console }) {
         throw new Error("Hồ sơ đã được QTV khác xử lý.");
       }
       state.setCaseStatus(caseId, "executing", { reviewedBy: senderId, reviewedAt: Date.now() });
+      await state.flush();
       try {
         await kickOne(item.userId, item.groupId);
       } catch (error) {
         state.setCaseStatus(caseId, "pending", { lastError: error.message });
+        await state.flush();
         throw error;
       }
       try {
         state.setCaseStatus(caseId, "kicked");
+        await state.flush();
       } catch (error) {
         log.error("Zalo đã xác nhận kick nhưng không lưu được hồ sơ:", error);
         await reply(message, `Zalo đã xác nhận kick thành viên ${item.userId}, nhưng bot chưa lưu được hồ sơ #${caseId}. Kiểm tra trạng thái nhóm trước khi duyệt lại.`);

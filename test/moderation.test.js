@@ -258,3 +258,11 @@ test("manual kick stops before the API call if intent cannot be saved", async (t
   await moderation.handleCommand(manualKick());
   assert.equal(kicked.length, 0);
 });
+
+test("manual kick waits for durable storage before calling Zalo", async (t) => {
+  const { state, kicked, sent, moderation } = fixture(t);
+  state.saveHook = async () => { throw new Error("Database unavailable"); };
+  await moderation.handleCommand(manualKick());
+  assert.equal(kicked.length, 0);
+  assert.match(sent.at(-1).text, /Database unavailable/);
+});

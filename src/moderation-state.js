@@ -4,13 +4,15 @@ import { randomBytes } from "node:crypto";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class ModerationState {
-  constructor(filePath, { now = Date.now, windowHours = 24 } = {}) {
+  constructor(filePath, { now = Date.now, windowHours = 24, initialData, saveHook } = {}) {
     this.filePath = filePath;
     this.now = now;
     this.windowMs = windowHours * 60 * 60 * 1000;
-    this.data = existsSync(filePath)
+    this.saveHook = saveHook;
+    this.pendingSave = Promise.resolve();
+    this.data = initialData ?? (existsSync(filePath)
       ? JSON.parse(readFileSync(filePath, "utf8"))
-      : { version: 1, incidents: [], cases: [], manualKicks: [] };
+      : { version: 1, incidents: [], cases: [], manualKicks: [] });
     if (this.data.version !== 1 || !Array.isArray(this.data.incidents) ||
         !Array.isArray(this.data.cases) || !Array.isArray(this.data.manualKicks)) {
       throw new Error("File moderation-state.json không hợp lệ; bot dừng để tránh xử lý sai.");
@@ -18,9 +20,19 @@ export class ModerationState {
   }
 
   save() {
+    if (this.saveHook) {
+      const snapshot = structuredClone(this.data);
+      this.pendingSave = this.pendingSave.then(() => this.saveHook(snapshot));
+      this.pendingSave.catch(() => {}); // Callers observe failures via flush().
+      return this.pendingSave;
+    }
     const temporary = `${this.filePath}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(this.data, null, 2)}\n`, { mode: 0o600 });
     renameSync(temporary, this.filePath);
+  }
+
+  async flush() {
+    await this.pendingSave;
   }
 
   prune() {

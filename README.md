@@ -1,5 +1,16 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.11.0: caption ảnh và lưu số lần vi phạm
+
+Bot đọc thêm caption nằm trong `params`/`data.params` dạng JSON của tin ảnh. Bot chỉ quét các trường chữ do người gửi viết; URL CDN của ảnh không bị tính là link quảng cáo. Nếu vẫn thấy ảnh có caption link lọt, chạy bản mới với `--debug` và gửi **dòng `[DEBUG]` của chính tin đó** cùng dòng `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` nếu có. Có link trong ảnh chụp màn hình chưa đủ để biết sự kiện ảnh đã tới bot hay API xóa có hiệu lực. Không gửi QR, cookie hoặc `SESSION_JSON`.
+
+`SESSION_JSON` chỉ giữ đăng nhập Zalo. Để lượt vi phạm và hồ sơ không bị đặt lại khi Render khởi động lại, chọn **một** nơi lưu:
+
+1. **PostgreSQL:** tạo Render Postgres, sao chép **Internal Database URL** vào biến môi trường `DATABASE_URL` của dịch vụ bot, cùng vùng Render với dịch vụ. Bot tạo bảng `zalo_link_guard_state` và dùng lại dữ liệu sau mỗi lần khởi động. Giữ URL này riêng tư. Dùng một tiến trình bot cho một cơ sở dữ liệu; nếu hai tiến trình cùng ghi, bot sẽ từ chối ghi đè trạng thái cũ. [Cách tạo và kết nối Render Postgres](https://render.com/docs/postgresql-creating-connecting).
+2. **Ổ đĩa bền vững:** gắn Render Persistent Disk vào dịch vụ trả phí, ví dụ mount path `/var/data`, rồi đặt biến môi trường `STATE_DIR=/var/data`. Bot lưu `moderation-state.json` trên ổ này. Chỉ đặt biến `STATE_DIR` mà chưa gắn disk **không** bảo đảm dữ liệu còn sau khi restart. [Render Persistent Disks](https://render.com/docs/disks).
+
+Nếu có cả hai biến, bot ưu tiên `DATABASE_URL`. Khi chưa có cả hai, bot vẫn chạy và in cảnh báo `[LƯU VI PHẠM]`; file trên Render mặc định có thể mất khi restart/redeploy. Render Postgres gói miễn phí hết hạn sau 30 ngày, nên cần nâng cấp hoặc chuyển dữ liệu trước hạn nếu muốn lưu lâu dài. [Giới hạn gói miễn phí Render](https://render.com/docs/free). Sau khi deploy, tìm dòng `[LƯU VI PHẠM] PostgreSQL (DATABASE_URL)` hoặc `file trong STATE_DIR` trong log. Những lượt đã mất trước khi gắn nơi lưu bền vững không thể tự khôi phục; bot chỉ có thể nhập `moderation-state.json` cũ nếu file đó còn trong thư mục chạy lúc khởi động lần đầu với database/disk.
+
 ## Bản 1.10.0
 
 Tin có link do **trưởng nhóm hoặc phó nhóm** gửi được bỏ qua hoàn toàn: không xóa, không cảnh báo, không cộng vi phạm và không lập hồ sơ kick. Bot xác minh quyền hiện tại qua `getGroupInfo` trước khi xử lý mỗi tin có link; nếu không xác minh được thì bỏ qua tin đó và ghi `[KIỂM TRA QTV]` để tránh xử lý nhầm QTV. Người trong `trustedUserIds` vẫn được miễn như trước.

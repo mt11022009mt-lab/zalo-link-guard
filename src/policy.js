@@ -26,37 +26,44 @@ export function extractLinks(content) {
 
 export function extractMessageLinks(message) {
   const content = message?.data?.content;
-  if (typeof content === "string") {
-    // Some message variants serialize their attachment data as JSON text.
-    // Scanning that text directly would mistake image CDN URLs for shared links.
-    if (/^\s*[\[{]/.test(content)) {
-      try {
-        const parsed = JSON.parse(content);
-        if (parsed && typeof parsed === "object") {
-          return extractMessageLinks({ data: { ...message.data, content: parsed } });
-        }
-      } catch { /* ordinary text */ }
-    }
-    return extractLinks(content);
-  }
-  if (!content || typeof content !== "object") return extractLinks([
-    message?.data?.caption, message?.data?.description,
-  ].filter((value) => typeof value === "string").join(" "));
-
   const msgType = String(message.data?.msgType ?? "").toLowerCase();
   const isLinkPreview = msgType === "chat.link" || msgType === "chat.recommended";
-  // Photos/files can carry CDN URLs in href/url. Only their user-written
-  // text is checked; link previews expose the shared target in href/url.
-  // The same visible caption can arrive under different msgType values.
-  const fields = isLinkPreview
-    ? [content.href, content.url, content.title, content.description, content.text, content.caption, content.msg]
-    : [content.caption, content.text, content.message, content.msg, content.body,
-        content.description, content.desc,
-        typeof content.content === "string" ? content.content : undefined,
-        content.data?.text, content.data?.caption, content.data?.msg,
-        content.data?.description, content.data?.desc,
-        message.data?.caption, message.data?.description];
-  return extractLinks(fields.filter((value) => typeof value === "string").join(" "));
+  const textKeys = new Set(["caption", "text", "message", "msg", "body", "description", "desc", "content"]);
+  const nestedKeys = new Set(["data", "params", "parameters", "attachment", "attachments", "payload", "metadata", "extra", "items"]);
+  const fields = [];
+  const seen = new WeakSet();
+  let visited = 0;
+  function collect(value, depth = 0, key = "content") {
+    if (depth > 6 || ++visited > 150) return;
+    if (typeof value === "string") {
+      if (/^\s*[\[{]/.test(value) && value.length <= 100_000) {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === "object") return collect(parsed, depth + 1, key);
+        } catch { /* The string is ordinary text. */ }
+      }
+      if (textKeys.has(key)) fields.push(value.slice(0, 20_000));
+      return;
+    }
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 20)) collect(item, depth + 1, key);
+      return;
+    }
+    for (const [field, item] of Object.entries(value)) {
+      const lower = field.toLowerCase();
+      if (textKeys.has(lower) || nestedKeys.has(lower)) collect(item, depth + 1, lower);
+      else if (isLinkPreview && depth === 0 && ["href", "url", "title"].includes(lower)) {
+        if (typeof item === "string") fields.push(item.slice(0, 20_000));
+      }
+    }
+  }
+  collect(content);
+  for (const key of ["caption", "description", "desc", "params", "attachment"]) {
+    if (message.data?.[key] !== undefined) collect(message.data[key], 0, key);
+  }
+  return extractLinks(fields.join(" "));
 }
 
 export function isAllowedDomain(hostname, allowedDomains) {
