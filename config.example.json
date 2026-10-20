@@ -1,6 +1,9 @@
 {
   "groupIds": ["THAY_BANG_ID_NHOM"],
   "trustedUserIds": [],
-  "allowedDomains": ["zalo.me"],
+  "allowedDomains": [],
+  "blockZaloLinks": true,
+  "blockZaloGroupInvites": true,
+  "violationWindowHours": 24,
   "dryRun": true
 }

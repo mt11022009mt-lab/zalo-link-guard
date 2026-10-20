@@ -12,22 +12,30 @@ test("detects plain, obfuscated and attachment links", () => {
   assert.equal(extractLinks("hxxps://spam[.]com").length, 1);
   assert.equal(extractLinks({ href: "https://spam.com", description: "quảng cáo" }).length, 1);
   assert.equal(extractLinks("Xem ngay https://spam.site/abc").length, 1);
+  assert.equal(extractLinks("za\u200blo。me").length, 1);
 });
 
 test("only blocks external links in configured groups from untrusted senders", () => {
   assert.ok(checkMessage(message("spam.com"), config));
-  assert.equal(checkMessage(message("https://zalo.me/oa/abc"), config), null);
+  assert.ok(checkMessage(message("https://zalo.me/oa/abc"), config));
   assert.equal(checkMessage(message("https://evilzalo.me"), config)?.links.length, 1);
   assert.equal(checkMessage(message("spam.com", "admin"), config), null);
   assert.equal(checkMessage(message("spam.com", "member", "other"), config), null);
   assert.equal(checkMessage({ ...message("spam.com"), isSelf: true }, config), null);
   assert.equal(checkMessage(message({ href: "https://cdn.example.com/photo.jpg" }, "member", "group-1", "chat.photo"), config), null);
+  assert.ok(checkMessage(message({ href: "https://cdn.example.com/photo.jpg", caption: "zalo.me/abc" }, "member", "group-1", "chat.photo"), config));
   assert.ok(checkMessage(message({ href: "https://spam.com" }, "member", "group-1", "chat.link"), config));
+  assert.ok(checkMessage(message({ href: "https://zalo.me/abc", title: "Mời tham gia" }, "member", "group-1", "chat.recommended"), config));
 });
 
-test("blocks Zalo group invite links even if an older config allows zalo.me", () => {
+test("blocks all zalo.me links with old allowlists, unless explicitly disabled", () => {
   assert.ok(checkMessage(message("https://zalo.me/g/abc123"), config));
   assert.ok(checkMessage(message("https://zalo.me/g\nabc123"), config));
-  assert.equal(checkMessage(message("https://zalo.me/oa/example"), config), null);
-  assert.equal(checkMessage(message("https://zalo.me/g/abc123"), { ...config, blockZaloGroupInvites: false }), null);
+  assert.ok(checkMessage(message("zalo.me"), config));
+  assert.ok(checkMessage(message("www.zalo.me/oa/example"), config));
+  assert.ok(checkMessage(message("m.zalo.me/abc"), config));
+  assert.equal(checkMessage(message("evilzalo.me"), { ...config, allowedDomains: ["evilzalo.me"] }), null);
+  assert.ok(checkMessage(message("https://zalo.me/g/abc123"), { ...config, blockZaloLinks: false }));
+  assert.equal(checkMessage(message("https://zalo.me/oa/example"), { ...config, blockZaloLinks: false }), null);
+  assert.equal(checkMessage(message("https://zalo.me/g/abc123"), { ...config, blockZaloLinks: false, blockZaloGroupInvites: false }), null);
 });
