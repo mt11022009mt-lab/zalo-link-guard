@@ -1,4 +1,5 @@
 import { ThreadType } from "zca-js";
+import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
 
 const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i;
 
@@ -17,11 +18,6 @@ export function parseManualKickTarget(message) {
       text.slice(0, start).trim().toLowerCase() !== "/kick" ||
       text.slice(start + length).trim() !== "") return null;
   return userId;
-}
-
-function isAdmin(info, userId) {
-  return String(info.creatorId) === String(userId) ||
-    (info.adminIds ?? []).some((id) => String(id) === String(userId));
 }
 
 function safeDisplayName(value) {
@@ -87,12 +83,7 @@ export function createModeration({ api, config, state, log = console }) {
   const windowHours = config.violationWindowHours ?? 24;
 
   async function groupInfo(groupId) {
-    const result = await api.getGroupInfo(groupId);
-    const info = result.gridInfoMap?.[groupId];
-    if (!info || !info.creatorId || !Array.isArray(info.adminIds)) {
-      throw new Error("Không xác minh được quản trị viên của nhóm trên Zalo.");
-    }
-    return info;
+    return getVerifiedGroupInfo(api, groupId);
   }
 
   async function reply(message, text) {

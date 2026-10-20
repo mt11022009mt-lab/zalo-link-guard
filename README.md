@@ -1,5 +1,13 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.10.0
+
+Tin có link do **trưởng nhóm hoặc phó nhóm** gửi được bỏ qua hoàn toàn: không xóa, không cảnh báo, không cộng vi phạm và không lập hồ sơ kick. Bot xác minh quyền hiện tại qua `getGroupInfo` trước khi xử lý mỗi tin có link; nếu không xác minh được thì bỏ qua tin đó và ghi `[KIỂM TRA QTV]` để tránh xử lý nhầm QTV. Người trong `trustedUserIds` vẫn được miễn như trước.
+
+Nếu API đọc lịch sử nhóm cũ trả 404, bot thử chuyển sang endpoint lịch sử cloud bằng hook `custom` của `zca-js`. Bản sửa này dựa trên [PR #370 của thư viện](https://github.com/RFS-ADRENO/zca-js/pull/370/files), hiện chưa được phát hành chính thức; cần xem log sau khi triển khai để xác nhận trên cộng đồng của bạn. Listener cũng bật chế độ kết nối lại và ghi các sự kiện `[KẾT NỐI]`. Nếu cả hai đường lịch sử đều lỗi, bot chỉ còn nhận tin trực tiếp và vẫn có thể bỏ lỡ tin.
+
+Sau khi cập nhật, dừng tiến trình cũ và chạy bản mới. Giữ nguyên `config.json`, `moderation-state.json` và `SESSION_JSON`; không phải quét QR lại khi phiên còn hiệu lực. Chạy `npm start -- --debug` để xem bot nhận và quyết định thế nào với một tin ảnh có caption chứa link. Dòng `[API XÓA TRẢ VỀ]` của một tin khác không xác nhận tin ảnh đó đã được xử lý.
+
 ## Bản 1.9.0
 
 Bot có thể đăng nhập bằng biến môi trường `SESSION_JSON`. Sau lần quét QR thành công trên máy cá nhân, bot tự lưu thông tin đăng nhập vào `zalo-session.json` trong thư mục chạy. File này được bỏ qua bởi Git; không in cookie lên console. Trên Render, bot yêu cầu `SESSION_JSON` và dừng với thông báo rõ ràng nếu biến bị thiếu, sai định dạng hoặc phiên bị Zalo từ chối. Phiên có thể hết hạn hoặc bị thu hồi; khi đó phải tạo phiên mới bằng QR. Tính năng này không bảo đảm tránh bị hạn chế tài khoản.
@@ -16,7 +24,7 @@ Nếu đặt `SESSION_JSON` ngay trên máy cá nhân, bot cũng dùng lại phi
 
 Bot đọc `description`/`desc` của tin kèm ảnh dù Zalo gửi loại tin khác `chat.photo`, và đọc được trường hợp dữ liệu ảnh là JSON dạng chữ. URL ảnh từ CDN trong `href`/`url` vẫn không bị xem là link quảng cáo. Tin chưa thấy link ở sự kiện trực tiếp không bị đánh dấu đã xử lý, để lần đọc lịch sử có thể kiểm tra lại caption. Nếu Zalo báo lỗi xóa, bot vẫn ghi đúng một lượt vi phạm cho tin đó và có thể thử xóa lại khi quét lịch sử.
 
-Sau khi thay bản cũ, **dừng tiến trình cũ rồi chạy bản 1.8.0**; chỉ thay file ZIP trên máy sẽ không cập nhật bot đang chạy. Giữ lại `config.json` và `moderation-state.json`. Nếu cùng một tin vẫn lọt, chạy `npm start -- --debug` và xem các dòng `[DEBUG]`, `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` lúc gửi tin thử. Không chia sẻ QR hoặc cookie đăng nhập.
+Sau khi thay mã nguồn, **dừng tiến trình cũ rồi chạy bản mới**; chỉ thay file ZIP trên máy sẽ không cập nhật bot đang chạy. Giữ lại `config.json` và `moderation-state.json`. Nếu cùng một tin vẫn lọt, chạy `npm start -- --debug` và xem các dòng `[DEBUG]`, `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` lúc gửi tin thử. Không chia sẻ QR hoặc cookie đăng nhập.
 
 Bot theo dõi các nhóm Zalo bạn chỉ định và gửi lệnh xóa tin có đường link ngoài danh sách tên miền được phép. Bot dùng `zca-js`, một thư viện **không chính thức** đăng nhập Zalo Web bằng QR. Tài khoản chạy bot cần là trưởng nhóm hoặc phó nhóm có quyền xóa tin và kick thành viên. Zalo có thể thay đổi giao diện web hoặc hạn chế tài khoản; không có bảo đảm bot sẽ hoạt động mãi.
 
@@ -35,7 +43,7 @@ Nếu chưa có `SESSION_JSON`, mở `zalo-login-qr.png` xuất hiện trong th�
 
 Sao chép `config.example.json` thành `config.json`. Điền một hoặc nhiều ID nhóm vào `groupIds`. Thêm ID của những người được phép đăng link vào `trustedUserIds`, và tên miền được phép vào `allowedDomains`. Danh sách mặc định rỗng nên mọi link đều bị lọc. Tên miền trong danh sách cũng cho phép các tên miền con. `zalo.me` không cho phép `evilzalo.me`. `blockZaloLinks: true` chặn mọi link `zalo.me` và tên miền con, kể cả khi cấu hình cũ đã thêm `zalo.me` vào `allowedDomains`. Nếu muốn cho phép link Zalo thường, đặt `blockZaloLinks: false`; giữ `blockZaloGroupInvites: true` để vẫn chặn link mời nhóm `/g/...`.
 
-`violationWindowHours` mặc định là `24`. `historySweepSeconds` mặc định là `60`: mỗi phút bot đọc 50 tin gần nhất trong mỗi nhóm để nhặt tin **mới từ khi bot khởi động** mà kết nối nhận tin đã lỡ. Đặt `0` để tắt; giá trị khác phải từ `30` đến `300` giây. Bot không quét tin cũ trước lúc khởi động. Nhóm quá nhiều tin trong một phút vẫn có thể vượt quá 50 tin gần nhất. Nhóm được giám sát cần có ít nhất một QTV là người thật, khác tài khoản chạy bot, để duyệt hồ sơ. Nếu bạn có **nhóm riêng chỉ dành cho QTV** mà tài khoản bot là thành viên, có thể thêm `"reviewGroupId": "ID_NHOM_QTV"` vào `config.json`. Bot sẽ gửi hồ sơ vào nhóm đó và nhắn riêng cho trưởng/phó nhóm. Nếu không có `reviewGroupId`, bot chỉ nhắn riêng cho các QTV. Zalo có thể từ chối tin nhắn riêng; bot sẽ ghi lỗi và giữ hồ sơ chờ duyệt.
+`violationWindowHours` mặc định là `24`. `historySweepSeconds` mặc định là `60`: mỗi phút bot đọc 50 tin gần nhất trong mỗi nhóm để nhặt tin **mới từ khi bot khởi động** mà kết nối nhận tin đã lỡ. Nếu endpoint cũ báo 404, bot thử endpoint lịch sử cloud. Đặt `0` để tắt; giá trị khác phải từ `30` đến `300` giây. Bot không quét tin cũ trước lúc khởi động. Nhóm quá nhiều tin trong một phút vẫn có thể vượt quá 50 tin gần nhất. Nhóm được giám sát cần có ít nhất một QTV là người thật, khác tài khoản chạy bot, để duyệt hồ sơ. Nếu bạn có **nhóm riêng chỉ dành cho QTV** mà tài khoản bot là thành viên, có thể thêm `"reviewGroupId": "ID_NHOM_QTV"` vào `config.json`. Bot sẽ gửi hồ sơ vào nhóm đó và nhắn riêng cho trưởng/phó nhóm. Nếu không có `reviewGroupId`, bot chỉ nhắn riêng cho các QTV. Zalo có thể từ chối tin nhắn riêng; bot sẽ ghi lỗi và giữ hồ sơ chờ duyệt.
 
 ```powershell
 Copy-Item config.example.json config.json
@@ -51,6 +59,7 @@ Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gử
 
 - Chỉ xử lý tin của người khác trong `groupIds`.
 - Bỏ qua người trong `trustedUserIds`.
+- Bỏ qua trưởng/phó nhóm theo quyền hiện tại trên Zalo, kể cả khi họ gửi link; không xóa hoặc cảnh báo tin của họ.
 - Nhận dạng link dạng `https://`, `www.`, tên miền thường gặp, `hxxps://` và dấu chấm viết thành `[.]`. Link `zalo.me/g/` bị xuống dòng trước mã mời cũng được ghép lại.
 - Nếu tin chứa ít nhất một tên miền ngoài `allowedDomains`, bot thử xóa **cả tin**. Vì vậy, hãy thêm các tên miền hợp lệ trước khi bật xóa.
 - Mọi link `zalo.me` luôn bị lọc theo cấu hình mặc định, kể cả khi `allowedDomains` có `zalo.me`. Có thể điều chỉnh bằng `blockZaloLinks` và `blockZaloGroupInvites`.

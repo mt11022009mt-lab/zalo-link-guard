@@ -6,6 +6,7 @@ import { ModerationState } from "./moderation-state.js";
 import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
+import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
 
 const configPath = resolve(process.cwd(), "config.json");
 const listingGroups = process.argv.includes("--list-groups");
@@ -48,7 +49,6 @@ const state = listingGroups ? null : new ModerationState(resolve(process.cwd(), 
 });
 
 const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
-const sessionPath = resolve(process.cwd(), "zalo-session.json");
 const zalo = new Zalo();
 let api;
 try {
@@ -56,7 +56,7 @@ try {
     zalo,
     sessionJson: process.env.SESSION_JSON,
     qrPath,
-    sessionPath,
+    sessionPath: resolve(process.cwd(), "zalo-session.json"),
     isRender: process.env.RENDER === "true" || Boolean(process.env.RENDER),
   });
 } catch (error) {
@@ -81,21 +81,19 @@ if (listingGroups) {
   process.exit(0);
 }
 
-if (config.dryRun) {
-  console.warn("[CHỈ XEM TRƯỚC] dryRun đang bật trong config.json: bot ghi nhận vi phạm nhưng KHÔNG xóa tin hay kick thành viên.");
-}
 console.log(`Đang theo dõi ${config.groupIds.length} nhóm; dryRun=${config.dryRun}.`);
+if (config.dryRun) console.warn("[CHỈ XEM TRƯỚC] dryRun=true: bot sẽ KHÔNG xóa tin, không ghi vi phạm và không kick.");
+if (config.blockZaloLinks === false) console.warn("[CẤU HÌNH] blockZaloLinks=false: link zalo.me ngoài /g/ có thể được phép.");
 try {
-  const ownId = String((typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid) ?? "");
+  const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
   const info = await api.getGroupInfo(config.groupIds);
   for (const groupId of config.groupIds) {
-    const group = info?.gridInfoMap?.[groupId];
+    const group = info.gridInfoMap?.[groupId];
     if (!group) {
       console.warn(`[KIỂM TRA NHÓM] ${groupId}: tài khoản bot không lấy được thông tin nhóm. Kiểm tra groupIds và tài khoản đăng nhập.`);
       continue;
     }
-    const isAdmin = String(group.creatorId) === ownId ||
-      (group.adminIds ?? []).some((id) => String(id) === ownId);
+    const isAdmin = Array.isArray(group.adminIds) && isGroupAdmin(group, ownId);
     console.log(`[KIỂM TRA NHÓM] ${groupId} | ${group.name ?? "?"} | bot_là_QTV=${isAdmin}`);
     if (!isAdmin) console.warn(`[KIỂM TRA NHÓM] ${groupId}: bot chưa là QTV; có thể không xóa được tin của người khác.`);
   }
@@ -104,6 +102,12 @@ try {
 }
 const moderation = createModeration({ api, config, state });
 const seenMessages = new Map();
+const messagesInFlight = new Set();
+function markSeen(messageKey) {
+  if (!messageKey) return;
+  seenMessages.set(messageKey, Date.now());
+  if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
+}
 
 async function processMessage(message, { source = "live" } = {}) {
   if (source === "live" && await moderation.handleCommand(message)) return;
@@ -111,11 +115,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (source === "history" && typeof message.data?.content === "string" &&
       /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
-  if (messageKey) {
-    if (seenMessages.has(messageKey)) return;
-    seenMessages.set(messageKey, Date.now());
-    if (seenMessages.size > 5000) seenMessages.delete(seenMessages.keys().next().value);
-  }
+  if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
   if (debug) {
     const domains = extractMessageLinks(message).map((link) => link.hostname);
     const content = message.data?.content;
@@ -127,37 +127,60 @@ async function processMessage(message, { source = "live" } = {}) {
     if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có link bị cấm hoặc người gửi được miễn)");
     return;
   }
-  if (debug) console.log(`[DEBUG] quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
-
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
     console.warn("Thiếu ID tin nhắn, bỏ qua để tránh xóa nhầm.");
     return;
   }
   const details = `nguồn=${source} nhóm=${message.threadId} người_gửi=${uidFrom} tin=${msgId} tên_miền=${result.links.map((item) => item.hostname).join(", ")}`;
-  if (config.dryRun) {
-    console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
-    await moderation.onViolation(message, result);
-    return;
-  }
+  if (messageKey) messagesInFlight.add(messageKey);
   try {
-    const response = await api.deleteMessage({
-      type: ThreadType.Group,
-      threadId: message.threadId,
-      data: { msgId, cliMsgId, uidFrom },
-    }, false);
-    console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
-  } catch (error) {
-    console.error(`[LỖI XÓA] ${details}`, error);
+    let group;
+    try {
+      group = await getVerifiedGroupInfo(api, message.threadId);
+    } catch (error) {
+      console.warn(`[KIỂM TRA QTV] Không xác minh được người gửi của ${details}; bỏ qua tin để tránh xử lý QTV nhầm: ${error.message}`);
+      return;
+    }
+    if (isGroupAdmin(group, uidFrom)) {
+      if (debug) console.log(`[DEBUG] quyết_định=bỏ_qua_QTV nhóm=${message.threadId} người_gửi=${uidFrom}`);
+      markSeen(messageKey);
+      return;
+    }
+    if (debug) console.log(`[DEBUG] quyết_định=vi_phạm tên_miền=${result.links.map((link) => link.hostname).join(",")}`);
+    if (config.dryRun) {
+      console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
+    } else {
+      let response;
+      try {
+        response = await api.deleteMessage({
+          type: ThreadType.Group,
+          threadId: message.threadId,
+          data: { msgId, cliMsgId, uidFrom },
+        }, false);
+      } catch (error) {
+        console.error(`[LỖI XÓA] ${details}`, error);
+        // A detected link still counts once; leave it eligible for a later delete retry.
+        await moderation.onViolation(message, result);
+        return;
+      }
+      console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
+    }
+    markSeen(messageKey);
+    await moderation.onViolation(message, result);
+  } finally {
+    if (messageKey) messagesInFlight.delete(messageKey);
   }
-  await moderation.onViolation(message, result);
 }
 
 api.listener.on("message", (message) => {
   void processMessage(message).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
 });
 api.listener.on("error", (error) => console.error("Lỗi kết nối Zalo:", error));
-api.listener.start();
+api.listener.on("connected", () => console.log("[KẾT NỐI] Đã nhận tin mới từ Zalo."));
+api.listener.on("disconnected", (code) => console.warn(`[KẾT NỐI] Bị ngắt; mã=${code}.`));
+api.listener.on("closed", (code) => console.warn(`[KẾT NỐI] Đã đóng; mã=${code}. Kiểm tra phiên Zalo nếu bot không nhận tin mới.`));
+api.listener.start({ retryOnClose: true });
 if (config.historySweepSeconds !== 0) {
   const seconds = config.historySweepSeconds ?? 60;
   const sweepHistory = createHistorySweep({
