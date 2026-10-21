@@ -1,5 +1,28 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.15.0: Quét toàn bộ nhóm hiện có (`/quetnhom`) & Bóc tách lệnh từ Link Preview Card
+
+Bản nâng cấp mạnh mẽ cho tính năng rải link và auto-join:
+
+### 1. Quét lịch sử tất cả các nhóm bot đang tham gia (`/quetnhom` / `/quetlink`)
+- **Tự động quét:** Khi khởi động, bot tự động quét qua danh sách tất cả các nhóm mà tài khoản bot đang có mặt.
+- **Đọc lịch sử tìm link:** Đọc các tin nhắn gần nhất trong từng nhóm, bóc tách toàn bộ link mời nhóm `zalo.me/g/...` và tự động đưa vào hàng đợi `joinQueue` để join ngầm lần lượt (30s/nhóm).
+- **Lệnh chủ động:** Bạn có thể nhắn `/quetnhom` hoặc `/quetlink` bất kỳ lúc nào để bot quét lại và báo cáo thống kê:
+  * Số nhóm đã quét.
+  * Số link mời nhóm mới tìm thấy.
+  * Số link đang chờ tham gia.
+  * Tổng số nhóm mục tiêu rải link hiện có.
+
+### 2. Tự động đồng bộ nhóm mục tiêu (`/danhsachnhom`)
+- Bất kỳ nhóm nào bot đã tham gia sẽ tự động được nạp vào danh sách mục tiêu rải link (`targetGroups`).
+- Dùng lệnh `/danhsachnhom` để xem danh sách và số lượng nhóm mục tiêu hiện tại.
+
+### 3. Nhận diện lệnh thông minh chống lỗi Link Card Preview
+- Khắc phục triệt để trường hợp khi người dùng gửi link trong tin nhắn lệnh (ví dụ `/railink https://zalo.me/g/... vao de`), Zalo Desktop/Mobile tự động tạo thẻ xem trước (Link Card Preview / `chat.link`).
+- Bot giờ đây bóc tách chính xác nội dung lệnh dù Zalo đóng gói dưới dạng plain text, JSON hay rich attachment preview.
+
+---
+
 ## Bản 1.14.0: Tự động tham gia nhóm & Rải link lác đác chống ban (Hỗ trợ 2 tài khoản điều hành)
 
 Bản cập nhật bổ sung tính năng rải link thông minh và tự động mở rộng nhóm mục tiêu:

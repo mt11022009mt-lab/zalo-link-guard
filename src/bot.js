@@ -199,7 +199,18 @@ try {
 }
 const moderation = createModeration({ api, config, state });
 const broadcaster = createBroadcaster({ api, config });
-console.log(`[RẢI LINK] Đã kích hoạt module Broadcaster; Nhóm mục tiêu sẵn có: ${broadcaster.store.data.targetGroups.length}`);
+console.log(`[RẢI LINK] Đã kích hoạt module Broadcaster; Nhóm mục tiêu ban đầu: ${broadcaster.store.data.targetGroups.length}`);
+
+// Tự động đồng bộ tất cả nhóm tài khoản đang có vào danh sách rải link
+void broadcaster.syncAllExistingGroups().then((targets) => {
+  console.log(`[RẢI LINK] Đã đồng bộ ${targets.length} nhóm của tài khoản vào danh sách mục tiêu.`);
+  if (config.broadcast?.autoScanExistingGroups !== false) {
+    console.log("[RẢI LINK] Bắt đầu quét ngầm lịch sử các nhóm để tìm link mời nhóm mới...");
+    broadcaster.scanAllGroupsForInvites().then((res) => {
+      console.log(`[RẢI LINK QUÉT TỰ ĐỘNG] Quét xong ${res.totalGroups} nhóm: tìm thấy ${res.linksFound} link mới (hàng đợi chờ join: ${res.queueLength}).`);
+    }).catch((err) => console.warn("[RẢI LINK QUÉT TỰ ĐỘNG] Lỗi khi quét ngầm:", err.message));
+  }
+}).catch((err) => console.warn("[RẢI LINK] Lỗi đồng bộ nhóm ban đầu:", err.message));
 const seenMessages = new Map();
 const messagesInFlight = new Set();
 function markSeen(messageKey) {

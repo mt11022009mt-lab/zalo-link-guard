@@ -1,5 +1,6 @@
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
+import { getCommandText } from "./broadcaster.js";
 
 const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|myid)(?:\s|$)/i;
 
@@ -222,12 +223,12 @@ export function createModeration({ api, config, state, log = console }) {
   }
 
   async function handleCommand(message) {
-    if (message.isSelf || typeof message.data?.content !== "string") return false;
-    const text = message.data.content.trim();
+    const text = getCommandText(message);
+    if (!text) return false;
     const matched = text.match(COMMAND_RE);
     if (!matched) return false;
     const command = matched[1].toLowerCase();
-    const senderId = String(message.data.uidFrom);
+    const senderId = String(message.data?.uidFrom || message.threadId);
 
     if (command === "myid") {
       await reply(message, `UID Zalo của bạn là: ${senderId}`);

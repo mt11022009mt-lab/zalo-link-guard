@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ThreadType } from "zca-js";
-import { createBroadcaster, formatBroadcastMessage, parseSpinText } from "../src/broadcaster.js";
+import { createBroadcaster, formatBroadcastMessage, parseSpinText, getCommandText } from "../src/broadcaster.js";
 
 const OPERATOR_1 = "1111111111";
 const OPERATOR_2 = "2222222222";
@@ -28,7 +28,7 @@ function createFixture(t, overrides = {}) {
       return "";
     },
     getAllGroups: async () => ({
-      gridVerMap: { "group-1": "1", "group-2": "1", "group-joined": "1" },
+      gridVerMap: { "group-1": "1", "group-2": "1" },
     }),
   };
 
@@ -134,7 +134,10 @@ test("stranger cannot start or stop broadcast; authorized operators can", async 
 });
 
 test("auto-detects group invites in incoming messages and joins them", async (t) => {
-  const { broadcaster, joinedLinks, advanceTime } = createFixture(t);
+  const { api, broadcaster, joinedLinks, advanceTime } = createFixture(t);
+  api.getAllGroups = async () => ({
+    gridVerMap: { "group-1": "1", "group-2": "1", "group-joined": "1" },
+  });
 
   // Message containing a group invite
   broadcaster.inspectMessageForInvites({
@@ -187,4 +190,69 @@ test("staggered broadcast worker sends one by one with delay and respects daily 
   // Campaign reaches done
   await broadcaster.stepBroadcastWorker();
   assert.equal(broadcaster.store.data.campaign.status, "done");
+});
+
+test("getCommandText extracts slash commands from string, object and rich link formats", () => {
+  // Plain string
+  assert.equal(getCommandText({ data: { content: "/myid" } }), "/myid");
+
+  // Object with description
+  assert.equal(
+    getCommandText({
+      data: {
+        msgType: "chat.link",
+        content: {
+          title: "Dame By NCK",
+          href: "https://zalo.me/g/sae9jnelddyql12uuymv",
+          description: "/railink https://zalo.me/g/sae9jnelddyql12uuymv vao de",
+        },
+      },
+    }),
+    "/railink https://zalo.me/g/sae9jnelddyql12uuymv vao de"
+  );
+
+  // Serialized JSON content
+  assert.equal(
+    getCommandText({
+      data: {
+        content: JSON.stringify({
+          href: "https://zalo.me/g/test",
+          desc: "/quetnhom",
+        }),
+      },
+    }),
+    "/quetnhom"
+  );
+});
+
+test("scanAllGroupsForInvites reads all existing groups and queues invites found in history", async (t) => {
+  const { broadcaster, sent } = createFixture(t);
+
+  // Mock history reader
+  const mockHistoryReader = async (groupId) => {
+    if (groupId === "group-1") {
+      return {
+        groupMsgs: [
+          { data: { content: "Chào cả nhà, tham gia nhóm này nha https://zalo.me/g/historyinvite1" } },
+        ],
+      };
+    }
+    return { groupMsgs: [] };
+  };
+
+  const scanResult = await broadcaster.scanAllGroupsForInvites(mockHistoryReader);
+  assert.equal(scanResult.linksFound, 1);
+  assert.ok(broadcaster.joinQueue.includes("https://zalo.me/g/historyinvite1"));
+
+  // Trigger /quetnhom command via chat
+  const handled = await broadcaster.handleCommand({
+    isSelf: false,
+    threadId: OPERATOR_1,
+    type: ThreadType.User,
+    data: { uidFrom: OPERATOR_1, content: "/quetnhom" },
+  });
+
+  assert.equal(handled, true);
+  const finishMsg = sent.find((s) => s.text.includes("Đã quét xong"));
+  assert.ok(finishMsg);
 });

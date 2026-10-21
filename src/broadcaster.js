@@ -2,6 +2,60 @@ import { ThreadType } from "zca-js";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { extractMessageLinks, isZaloGroupInvite } from "./policy.js";
+import { createGroupHistoryReader } from "./history-sweep.js";
+
+export function getCommandText(message) {
+  if (!message || message.isSelf || !message.data) return "";
+  const data = message.data;
+
+  // 1. Direct string content
+  if (typeof data.content === "string") {
+    const trimmed = data.content.trim();
+    if (trimmed.startsWith("/")) return trimmed;
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const fromObj = findSlashCommandInObject(parsed);
+        if (fromObj) return fromObj;
+      } catch {}
+    }
+  }
+
+  // 2. Object content (e.g. chat.link, rich attachments)
+  if (data.content && typeof data.content === "object") {
+    const fromObj = findSlashCommandInObject(data.content);
+    if (fromObj) return fromObj;
+  }
+
+  // 3. Fallback fields on message.data
+  for (const key of ["msg", "caption", "description", "desc"]) {
+    if (typeof data[key] === "string" && data[key].trim().startsWith("/")) {
+      return data[key].trim();
+    }
+  }
+
+  // 4. Params field (often JSON string)
+  if (typeof data.params === "string" && data.params.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(data.params);
+      const fromObj = findSlashCommandInObject(parsed);
+      if (fromObj) return fromObj;
+    } catch {}
+  }
+
+  return typeof data.content === "string" ? data.content.trim() : "";
+}
+
+function findSlashCommandInObject(obj) {
+  if (!obj || typeof obj !== "object") return "";
+  for (const key of ["description", "desc", "caption", "text", "msg", "title", "content"]) {
+    const val = obj[key];
+    if (typeof val === "string" && val.trim().startsWith("/")) {
+      return val.trim();
+    }
+  }
+  return "";
+}
 
 export function parseSpinText(template, randomFn = Math.random) {
   if (typeof template !== "string") return "";
@@ -223,17 +277,85 @@ export function createBroadcaster({
   const broadcastTimer = setInterval(() => void stepBroadcastWorker(), 5_000);
   broadcastTimer.unref();
 
+  let isScanning = false;
+  async function syncAllExistingGroups() {
+    if (!api || typeof api.getAllGroups !== "function") return store.data.targetGroups;
+    try {
+      const groups = await api.getAllGroups();
+      const ids = Object.keys(groups.gridVerMap || {});
+      let added = 0;
+      for (const gid of ids) {
+        const sId = String(gid);
+        if (!store.data.targetGroups.includes(sId)) {
+          store.data.targetGroups.push(sId);
+          added++;
+        }
+      }
+      if (added > 0) {
+        store.save();
+        log.info(`[ĐỒNG BỘ NHÓM] Đã nạp ${added} nhóm hiện có vào danh sách mục tiêu rải link (tổng: ${store.data.targetGroups.length}).`);
+      }
+      return store.data.targetGroups;
+    } catch (err) {
+      log.warn("[ĐỒNG BỘ NHÓM] Lỗi lấy danh sách nhóm:", err.message);
+      return store.data.targetGroups;
+    }
+  }
+
+  async function scanAllGroupsForInvites(historyReaderOverride) {
+    if (isScanning) return { inProgress: true };
+    isScanning = true;
+    try {
+      await syncAllExistingGroups();
+      const groupIds = [...store.data.targetGroups];
+      if (!groupIds.length) {
+        return { totalGroups: 0, linksFound: 0, queueLength: joinQueue.length, targetGroupsCount: 0 };
+      }
+
+      const historyReader = historyReaderOverride || createGroupHistoryReader(api, log);
+      let linksFound = 0;
+
+      for (const gid of groupIds) {
+        try {
+          const res = await historyReader(gid, 50);
+          const msgs = res?.groupMsgs || [];
+          for (const msg of msgs) {
+            const links = extractMessageLinks(msg);
+            for (const item of links) {
+              if (isZaloGroupInvite(item)) {
+                if (queueGroupInvite(item.url)) {
+                  linksFound++;
+                }
+              }
+            }
+          }
+        } catch (err) {
+          log.warn(`[QUÉT LỊCH SỬ] Nhóm ${gid}: ${err.message}`);
+        }
+      }
+
+      return {
+        totalGroups: groupIds.length,
+        linksFound,
+        queueLength: joinQueue.length,
+        targetGroupsCount: store.data.targetGroups.length,
+      };
+    } finally {
+      isScanning = false;
+    }
+  }
+
   async function handleCommand(message) {
-    if (message.isSelf || typeof message.data?.content !== "string") return false;
-    const text = message.data.content.trim();
-    const senderId = String(message.data.uidFrom);
+    const text = getCommandText(message);
+    if (!text) return false;
+    const senderId = String(message.data?.uidFrom || message.threadId);
 
     if (/^\/myid(?:\s|$)/i.test(text)) {
       await api.sendMessage(`UID Zalo của bạn là: ${senderId}`, message.threadId, message.type);
       return true;
     }
 
-    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget)(?:\s+([\s\S]*))?$/i);
+    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget|quetnhom|quetlink|danhsachnhom)(?:\s+([\s\S]*))?$/i);
     if (!match) return false;
 
     if (!isOperator(senderId)) {
@@ -252,7 +374,7 @@ export function createBroadcaster({
       const template = parts.slice(1).join(" ").trim();
       if (!url || !/^https?:\/\//i.test(url) || !template) {
         await api.sendMessage(
-          "Cú pháp: /railink <URL> <mẫu nội dung spin>\nVí dụ: /railink https://zalo.me/g/abc {Chào cả nhà|Xin chào anh em}, tham gia nhóm mới nhé!",
+          "Cú pháp: /railink <URL> <mẫu nội dung spin>\nVí dụ: /railink https://zalo.me/g/abc {Chào cả nhà|Xin chào anh em}, tham gia nhóm mới nhé!\n(Hoặc đơn giản: /railink https://zalo.me/g/abc Vào nhóm nhé)",
           message.threadId, message.type
         );
         return true;
@@ -261,6 +383,16 @@ export function createBroadcaster({
       if (store.data.campaign && store.data.campaign.status === "running") {
         await api.sendMessage(
           `Đang có chiến dịch #${store.data.campaign.id} đang chạy. Hãy gõ /stoprai trước khi tạo chiến dịch mới.`,
+          message.threadId, message.type
+        );
+        return true;
+      }
+
+      await syncAllExistingGroups();
+
+      if (!store.data.targetGroups.length) {
+        await api.sendMessage(
+          "⚠️ Chưa có nhóm mục tiêu nào để rải link! Hãy gõ /quetnhom để bot tự tìm nhóm từ các box bot đang tham gia.",
           message.threadId, message.type
         );
         return true;
@@ -287,7 +419,7 @@ export function createBroadcaster({
 
       const preview = formatBroadcastMessage(template, url, randomFn);
       await api.sendMessage(
-        `🚀 Đã khởi tạo chiến dịch rải link #${campaignId}!\n- Tổng nhóm mục tiêu: ${items.length}\n- Giãn cách an toàn: ${config.broadcast?.minDelaySeconds ?? 60}s - ${config.broadcast?.maxDelaySeconds ?? 180}s\n- Mẫu xem trước:\n"${preview}"\n\nBot đang tiến hành rải lác đác từng nhóm...`,
+        `🚀 Đã khởi tạo chiến dịch rải link #${campaignId}!\n- Tổng nhóm mục tiêu: ${items.length} nhóm\n- Giãn cách an toàn: ${config.broadcast?.minDelaySeconds ?? 60}s - ${config.broadcast?.maxDelaySeconds ?? 180}s\n- Mẫu xem trước:\n"${preview}"\n\nBot đang tiến hành rải lác đác từng nhóm...`,
         message.threadId, message.type
       );
       return true;
@@ -338,6 +470,33 @@ export function createBroadcaster({
       return true;
     }
 
+    if (command === "quetnhom" || command === "quetlink") {
+      await api.sendMessage("🔍 Đang bắt đầu quét tin nhắn trong tất cả các nhóm bot đang tham gia để tìm link mời nhóm mới...", message.threadId, message.type);
+      const res = await scanAllGroupsForInvites();
+      if (res.inProgress) {
+        await api.sendMessage("Tiến trình quét nhóm đang chạy, vui lòng chờ trong giây lát.", message.threadId, message.type);
+        return true;
+      }
+      await api.sendMessage(
+        `✅ Đã quét xong ${res.totalGroups} nhóm!\n` +
+        `- Tìm thấy: ${res.linksFound} link mời nhóm mới\n` +
+        `- Hàng đợi chờ tự động vào nhóm: ${res.queueLength} link (tự join mỗi 30s)\n` +
+        `- Tổng nhóm mục tiêu rải link hiện có: ${res.targetGroupsCount} nhóm`,
+        message.threadId, message.type
+      );
+      return true;
+    }
+
+    if (command === "danhsachnhom") {
+      await syncAllExistingGroups();
+      const list = store.data.targetGroups;
+      await api.sendMessage(
+        `📋 DANH SÁCH NHÓM MỤC TIÊU (${list.length} nhóm):\n${list.slice(0, 20).map((id, idx) => `${idx + 1}. ID: ${id}`).join("\n")}${list.length > 20 ? `\n... và còn ${list.length - 20} nhóm khác.` : ""}`,
+        message.threadId, message.type
+      );
+      return true;
+    }
+
     if (command === "trangthairai") {
       const camp = store.data.campaign;
       const totalGroups = store.data.targetGroups.length;
@@ -373,9 +532,12 @@ export function createBroadcaster({
     handleCommand,
     inspectMessageForInvites,
     queueGroupInvite,
+    joinQueue,
     store,
     stepJoinWorker,
     stepBroadcastWorker,
+    syncAllExistingGroups,
+    scanAllGroupsForInvites,
     close: () => {
       clearInterval(joinTimer);
       clearInterval(broadcastTimer);
