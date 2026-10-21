@@ -368,18 +368,33 @@ async function processMessage(message, { source = "live" } = {}) {
     } else {
       console.log(`[ĐANG TIẾN HÀNH XÓA] ${details}`);
       let response;
+      let deleteSuccess = false;
       try {
         response = await api.deleteMessage({
           type: ThreadType.Group,
           threadId: message.threadId,
           data: { msgId, cliMsgId, uidFrom },
         }, false);
+        deleteSuccess = true;
+        console.log(`[ĐÃ XÓA XONG] ${details} trạng thái API: ${JSON.stringify(response)}`);
       } catch (error) {
         console.error(`[LỖI XÓA] ${details}:`, error.message);
-        if (result.links.length) await moderation.onViolation(message, result);
-        return;
+        // Phương án 2: Thử gọi api.undo (thu hồi) nếu deleteMessage bị Zalo từ chối
+        if (typeof api.undo === "function") {
+          try {
+            console.log(`[THỬ THU HỒI - UNDO] ${details}`);
+            response = await api.undo({ msgId, cliMsgId }, message.threadId, ThreadType.Group);
+            deleteSuccess = true;
+            console.log(`[ĐÃ THU HỒI XONG] ${details} trạng thái API: ${JSON.stringify(response)}`);
+          } catch (undoErr) {
+            console.error(`[LỖI THU HỒI - UNDO] ${details}:`, undoErr.message);
+          }
+        }
+        if (!deleteSuccess) {
+          if (result.links.length) await moderation.onViolation(message, result);
+          return;
+        }
       }
-      console.log(`[ĐÃ XÓA XONG] ${details} trạng thái API: ${JSON.stringify(response)}`);
     }
     markSeen(messageKey);
     if (result.links.length) await moderation.onViolation(message, result);
