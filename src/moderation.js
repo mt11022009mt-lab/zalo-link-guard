@@ -1,14 +1,68 @@
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
-import { getCommandText } from "./broadcaster.js";
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|myid)(?:\s|$)/i;
+export function getCommandText(message) {
+  if (!message || message.isSelf || !message.data) return "";
+  const data = message.data;
 
-export function parseManualKickTarget(message) {
+  // 1. Direct string content
+  if (typeof data.content === "string") {
+    const trimmed = data.content.trim();
+    if (trimmed.startsWith("/")) return trimmed;
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        const fromObj = findSlashCommandInObject(parsed);
+        if (fromObj) return fromObj;
+      } catch {}
+    }
+  }
+
+  // 2. Object content (e.g. chat.link, rich attachments)
+  if (data.content && typeof data.content === "object") {
+    const fromObj = findSlashCommandInObject(data.content);
+    if (fromObj) return fromObj;
+  }
+
+  // 3. Fallback fields on message.data
+  for (const key of ["msg", "caption", "description", "desc"]) {
+    if (typeof data[key] === "string" && data[key].trim().startsWith("/")) {
+      return data[key].trim();
+    }
+  }
+
+  // 4. Params field (often JSON string)
+  if (typeof data.params === "string" && data.params.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(data.params);
+      const fromObj = findSlashCommandInObject(parsed);
+      if (fromObj) return fromObj;
+    } catch {}
+  }
+
+  return typeof data.content === "string" ? data.content.trim() : "";
+}
+
+function findSlashCommandInObject(obj) {
+  if (!obj || typeof obj !== "object") return "";
+  for (const key of ["description", "desc", "caption", "text", "msg", "title", "content"]) {
+    const val = obj[key];
+    if (typeof val === "string" && val.trim().startsWith("/")) {
+      return val.trim();
+    }
+  }
+  return "";
+}
+
+
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|botinfo|status|help|myid)(?:\s|$)/i;
+
+export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
   const mentions = message.data?.mentions;
+  const regex = new RegExp(`^\\s*\\/${cmd}\\s+`, "i");
   if (message.type !== ThreadType.Group || typeof text !== "string" ||
-      !/^\s*\/kick\s+/i.test(text) || !Array.isArray(mentions) || mentions.length !== 1) return null;
+      !regex.test(text) || !Array.isArray(mentions) || mentions.length !== 1) return null;
   const mention = mentions[0];
   const userId = String(mention.uid ?? "");
   if (!/^\d{5,}$/.test(userId) || mention.type === 1) return null; // Never accept @all.
@@ -16,9 +70,13 @@ export function parseManualKickTarget(message) {
   const length = Number(mention.len);
   if (!Number.isInteger(start) || !Number.isInteger(length) || length < 2 ||
       start < 0 || start + length > text.length ||
-      text.slice(0, start).trim().toLowerCase() !== "/kick" ||
+      text.slice(0, start).trim().toLowerCase() !== `/${cmd}` ||
       text.slice(start + length).trim() !== "") return null;
   return userId;
+}
+
+export function parseManualKickTarget(message) {
+  return parseManualTarget(message, "kick");
 }
 
 function safeDisplayName(value) {
@@ -322,6 +380,35 @@ export function createModeration({ api, config, state, log = console }) {
           ? "Không gửi được danh sách có tag vào nhóm. Hãy kiểm tra quyền nhắn tin của bot."
           : "Không gửi được danh sách riêng. Hãy kiểm tra quyền nhắn tin với tài khoản bot.");
       }
+      return true;
+    }
+
+    if (command === "tha" || command === "xoavipham") {
+      const groupId = String(message.threadId);
+      const targetId = parseManualTarget(message, "tha") || parseManualTarget(message, "xoavipham");
+      if (!config.groupIds.includes(groupId) || !targetId) {
+        await reply(message, "Cú pháp: /tha @thành_viên (tag đúng một người trong nhóm để xóa lịch sử vi phạm).");
+        return true;
+      }
+      try {
+        const info = await groupInfo(groupId);
+        if (!isAdmin(info, senderId)) throw new Error("Chỉ QTV nhóm mới được dùng lệnh này.");
+        const count = state.clearViolations(groupId, targetId);
+        await state.flush();
+        await reply(message, `Đã xóa lịch sử vi phạm cho thành viên ${targetId} (${count} lượt vi phạm đã được hủy).`);
+      } catch (error) {
+        await reply(message, `Không thực hiện được: ${error.message}`);
+      }
+      return true;
+    }
+
+    if (command === "botinfo" || command === "status") {
+      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.0.0)\n- Trạng thái: Đang hoạt động\n- Nhóm đang bảo vệ: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (Không spam tin cảnh báo)" : "TẮT"}`);
+      return true;
+    }
+
+    if (command === "help") {
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN:\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

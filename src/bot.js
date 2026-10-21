@@ -9,7 +9,6 @@ import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
 import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
-import { createBroadcaster } from "./broadcaster.js";
 
 // Chống crash đột tử do lỗi mạng hoặc unhandled rejection từ WebSocket / Zalo API
 process.on("unhandledRejection", (reason) => {
@@ -87,19 +86,20 @@ const server = createServer((req, res) => {
       config: {
         groupIds: config?.groupIds,
         trustedUserIds: config?.trustedUserIds,
-        broadcastOperatorIds: config?.broadcastOperatorIds,
         allowedDomains: config?.allowedDomains,
         blockImages: config?.blockImages,
         blockZaloLinks: config?.blockZaloLinks,
         blockZaloGroupInvites: config?.blockZaloGroupInvites,
+        silentModeration: config?.silentModeration,
         dryRun: config?.dryRun,
         autoKick: config?.autoKick,
+        maxViolations: config?.maxViolations,
       },
       stats: {
         seenCount: seenMessages.size,
         messagesInFlight: messagesInFlight.size,
-        targetGroupsCount: broadcaster?.store?.data?.targetGroups?.length ?? 0,
-        joinQueueCount: broadcaster?.joinQueue?.length ?? 0,
+        monitoredGroupsCount: config?.groupIds?.length ?? 0,
+        violationsCount: state?.listViolations?.()?.length ?? 0,
       },
       recentLogs: logBuffer.slice(-50),
     }, null, 2));
@@ -165,8 +165,6 @@ if (!listingGroups) {
       (config.silentModeration !== undefined && typeof config.silentModeration !== "boolean") ||
       (config.autoKick !== undefined && typeof config.autoKick !== "boolean") ||
       (config.maxViolations !== undefined && (!Number.isInteger(config.maxViolations) || config.maxViolations < 1 || config.maxViolations > 10)) ||
-      (config.broadcastOperatorIds !== undefined && !validIds(config.broadcastOperatorIds)) ||
-      (config.broadcast !== undefined && (typeof config.broadcast !== "object" || config.broadcast === null)) ||
       (config.blockZaloLinks !== undefined && typeof config.blockZaloLinks !== "boolean") ||
       (config.blockZaloGroupInvites !== undefined && typeof config.blockZaloGroupInvites !== "boolean") ||
       (config.reviewGroupId !== undefined && (typeof config.reviewGroupId !== "string" || !config.reviewGroupId.trim() ||
@@ -263,36 +261,37 @@ try {
   console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
 const moderation = createModeration({ api, config, state });
-const broadcaster = createBroadcaster({ api, config });
-console.log(`[RẢI LINK] Đã kích hoạt module Broadcaster; Nhóm mục tiêu ban đầu: ${broadcaster.store.data.targetGroups.length}`);
 
-// Tự động đồng bộ tất cả nhóm tài khoản đang có vào danh sách rải link
-void broadcaster.syncAllExistingGroups().then(async (targets) => {
-  console.log(`[RẢI LINK] Đã đồng bộ ${targets.length} nhóm của tài khoản vào danh sách mục tiêu.`);
+// Tự động quét và kích hoạt bảo vệ cho tất cả nhóm bot làm Quản trị viên / Phó nhóm
+async function syncProtectedGroups() {
   try {
-    if (typeof api.getGroupInfo === "function" && targets.length) {
-      const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
-      const info = await api.getGroupInfo(targets);
-      for (const gid of targets) {
-        const gData = info?.gridInfoMap?.[gid];
-        if (gData && isGroupAdmin(gData, ownId)) {
-          if (!config.groupIds.includes(String(gid))) {
-            config.groupIds.push(String(gid));
-            console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${gid} (${gData.name || "Không rõ"}): Bot là Quản trị viên -> Đã kích hoạt chế độ lọc link & ảnh!`);
-          }
+    if (typeof api.getAllGroups !== "function") return;
+    const allGroups = await api.getAllGroups();
+    const groupIds = Object.keys(allGroups?.gridVerMap || {});
+    if (!groupIds.length) return;
+    const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
+    let info = { gridInfoMap: {} };
+    if (typeof api.getGroupInfo === "function") {
+      info = await api.getGroupInfo(groupIds);
+    }
+    let autoProtectedCount = 0;
+    for (const gid of groupIds) {
+      const gData = info?.gridInfoMap?.[gid];
+      if (gData && isGroupAdmin(gData, ownId)) {
+        if (!config.groupIds.includes(String(gid))) {
+          config.groupIds.push(String(gid));
+          autoProtectedCount++;
+          console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${gid} ("${gData.name || "Không rõ"}"): Bot là QTV -> Đã kích hoạt bảo vệ!`);
         }
       }
     }
+    console.log(`[QUẢN LÝ NHÓM] Đang bảo vệ ${config.groupIds.length} nhóm (tự động kích hoạt ${autoProtectedCount} nhóm QTV mới).`);
   } catch (err) {
-    console.warn("[TỰ ĐỘNG BẢO VỆ] Lỗi quét quyền QTV lúc khởi động:", err.message);
+    console.warn("[QUẢN LÝ NHÓM] Lỗi quét danh sách nhóm lúc khởi động:", err.message);
   }
-  if (config.broadcast?.autoScanExistingGroups !== false) {
-    console.log("[RẢI LINK] Bắt đầu quét ngầm lịch sử các nhóm để tìm link mời nhóm mới...");
-    broadcaster.scanAllGroupsForInvites().then((res) => {
-      console.log(`[RẢI LINK QUÉT TỰ ĐỘNG] Quét xong ${res.totalGroups} nhóm: tìm thấy ${res.linksFound} link mới (hàng đợi chờ join: ${res.queueLength}).`);
-    }).catch((err) => console.warn("[RẢI LINK QUÉT TỰ ĐỘNG] Lỗi khi quét ngầm:", err.message));
-  }
-}).catch((err) => console.warn("[RẢI LINK] Lỗi đồng bộ nhóm ban đầu:", err.message));
+}
+void syncProtectedGroups();
+
 const seenMessages = new Map();
 const messagesInFlight = new Set();
 function markSeen(messageKey) {
@@ -303,14 +302,10 @@ function markSeen(messageKey) {
 
 async function processMessage(message, { source = "live" } = {}) {
   lastMessageTime = new Date().toISOString();
-  if (source === "live" && await broadcaster.handleCommand(message)) return;
   if (source === "live" && await moderation.handleCommand(message)) return;
-  if (source === "live") {
-    broadcaster.inspectMessageForInvites(message);
-  }
   if (message.type !== ThreadType.Group) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|status|botinfo|help|myid)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 
@@ -383,6 +378,9 @@ async function processMessage(message, { source = "live" } = {}) {
         console.log(`[ĐÃ XÓA XONG] ${details} trạng thái API: ${JSON.stringify(response)}`);
       } catch (error) {
         console.error(`[LỖI XÓA] ${details}:`, error.message);
+        if (error.message?.includes("Không thể nhận tin nhắn") || String(error.code) === "123") {
+          console.warn(`[RATE LIMIT ZALO] ${details}: Nick bot đang bị Zalo tạm khóa tương tác nhóm ("Đạt giới hạn rồi"). Lượt vi phạm vẫn được ghi nhận.`);
+        }
         // Phương án 2: Thử gọi api.undo (thu hồi) nếu deleteMessage bị Zalo từ chối
         if (typeof api.undo === "function") {
           try {

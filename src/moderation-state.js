@@ -132,6 +132,22 @@ export class ModerationState {
     return item;
   }
 
+  clearViolations(groupId, userId) {
+    this.prune();
+    const removedCount = this.data.incidents.filter((entry) =>
+      entry.groupId === groupId && entry.userId === userId).length;
+    this.data.incidents = this.data.incidents.filter((entry) =>
+      entry.groupId !== groupId || entry.userId !== userId);
+    for (const item of this.data.cases) {
+      if (item.groupId === groupId && item.userId === userId && item.status === "pending") {
+        item.status = "cleared";
+        item.clearedAt = this.now();
+      }
+    }
+    this.save();
+    return removedCount;
+  }
+
   startManualKick({ groupId, userId, adminId }) {
     this.prune();
     const item = {

@@ -1,244 +1,95 @@
-# Bot dọn link trong nhóm Zalo
+# 🛡️ Zalo Link Guard & Group Guardian (v2.0.0)
 
-## Bản 1.16.4: Chế độ kiểm duyệt âm thầm (Silent Moderation) — Xóa link, xóa ảnh & Kick thành viên không gửi thông báo ra nhóm
-
-Bản cập nhật giúp box chat luôn sạch sẽ tuyệt đối và bảo vệ bot không bị Zalo giới hạn tần suất gửi tin:
-- **Xóa tin & Kick 100% âm thầm (`silentModeration: true`):** Khi thành viên gửi link hoặc ảnh vi phạm, bot vẫn lập tức thu hồi/xóa tin nhắn và tính điểm vi phạm; khi đủ số lần (mặc định 3 lần) bot tự động kick thành viên ra khỏi nhóm. Tuy nhiên, bot **hoàn toàn không gửi bất kỳ tin nhắn cảnh báo hay thông báo kick nào vào box chat** (`⚠️ @user đã gửi link...`, `⛔ @user đã bị kick...`).
-- **Chống giới hạn tin nhắn Zalo (Anti-Rate Limit):** Giảm thiểu tối đa lưu lượng tin nhắn bot phát ra trong nhóm, tránh việc nick bot bị Zalo đánh dấu spam hoặc báo *"Đạt giới hạn rồi"*.
-- **Giữ nguyên phản hồi lệnh điều hành:** Các lệnh quản trị chủ động (`/vipham`, `/kick @thành_viên`, `/myid`, `/railink`, v.v.) vẫn hoạt động bình thường khi QTV/điều hành yêu cầu.
+Hệ thống bot tự động quản lý nhóm Zalo chuyên nghiệp: **Tự động lọc link spam, chặn ảnh rác, xử lý vi phạm âm thầm và kick thành viên quấy phá 24/7.**
 
 ---
 
-## Bản 1.16.3: Tự động kích hoạt lọc link & ảnh cho mọi nhóm Bot làm Phó nhóm (Admin)
+## 🌟 Tính Năng Nổi Bật
 
-Bản cập nhật thông minh giải quyết triệt để vấn đề bot không xóa link/ảnh ở nhóm mới:
-- **Tự động nhận diện quyền QTV:** Khi bot được set làm Phó nhóm hoặc Trưởng nhóm ở **bất kỳ nhóm Zalo nào** (kể cả nhóm mới tạo, nhóm cộng đồng), bot sẽ **tự động nạp nhóm đó vào danh sách bảo vệ** mà không cần sửa `config.json` thủ công!
-- **Hỗ trợ nhóm "Tricker by brays" (ID `908709376055683451`):** Đã kích hoạt bảo vệ lọc link và xóa ảnh spam.
-- **Trang chẩn đoán trực tiếp `/debug`:** Mở link `https://<ten-domain>.onrender.com/debug` để xem 50 log gần nhất và tình trạng lọc tin theo thời gian thực.
+### 1. 🧹 Lọc Link & Chặn Ảnh Spam Siêu Tốc
+- **Quét sạch link lạ:** Tự động phát hiện và xóa mọi đường link không được phép (bao gồm link web, link mời nhóm `zalo.me/g/...`, link rút gọn, link ẩn hoặc tin nhắn dạng Link Preview Card).
+- **Chặn ảnh & Album spam:** Tùy chọn `blockImages: true` giúp ngăn chặn triệt để tình trạng spam ảnh vào box chat.
+- **Cơ chế xóa 2 lớp (Dual Fallback):** Ưu tiên xóa tin nhắn đối với mọi người (`deleteMessage`), nếu gặp lỗi sẽ tự động chuyển sang thu hồi tin nhắn (`undo`), đảm bảo tỷ lệ dọn dẹp thành công cao nhất.
 
----
+### 2. 🤫 Chế Độ Kiểm Duyệt Âm Thầm (Silent Moderation)
+- **Box chat luôn sạch sẽ:** Bot xóa link/ảnh và tính điểm vi phạm hoàn toàn trong im lặng, **tuyệt đối không gửi tin nhắn cảnh báo rác vào nhóm**.
+- **Chống giới hạn Zalo (Anti-Rate Limit):** Triệt tiêu hoàn toàn nguy cơ tài khoản bot bị Zalo phạt rate-limit (*"Đạt giới hạn rồi"*) do gửi tin nhắn tag người lạ quá nhiều.
 
-## Bản 1.16.1: Tối ưu thông báo chống spam — Chỉ báo khi vào thành công nhóm mới
+### 3. ⚖️ Đếm Vi Phạm & Tự Động Kick Thành Viên (Auto-Kick)
+- **Tự động tính điểm:** Mặc định vi phạm 3 lần trong vòng 24 giờ sẽ bị **tự động kick khỏi nhóm**.
+- **Miễn trừ an toàn:** Trưởng nhóm, Phó nhóm và danh sách ID tin cậy (`trustedUserIds`) không bao giờ bị xóa tin hay kick nhầm.
 
-Bản tinh chỉnh thông minh theo yêu cầu vận hành thực tế:
-- **Chỉ báo khi vào thành công:** Bot chỉ gửi tin nhắn riêng cho 2 tài khoản điều hành khi **thực sự tham gia thành công** một nhóm mới và nhóm đó **cho phép nhắn tin** (`🎉 [BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI]`).
-- **Tắt thông báo chờ duyệt:** Khi gặp nhóm bật chế độ phê duyệt (mã 240), bot âm thầm lưu link vào danh sách để không spam và chờ QTV duyệt trong nền, **không gửi tin nhắn làm phiền điều hành**.
-- **Tự out nhóm khóa chat 100% im lặng:** Khi phát hiện nhóm bị khóa chat (lúc vừa vào nhóm hoặc lúc gửi tin rải link bị chặn quyền), bot tự động rời nhóm và loại khỏi danh sách mục tiêu trong im lặng, **không gửi tin nhắn báo rời nhóm**.
-- **Hộp thư luôn gọn gàng:** Người điều hành chỉ nhận đúng thông báo khi có địa bàn mới đã sẵn sàng rải link.
+### 4. 🔄 Tự Động Kích Hoạt Bảo Vệ Mọi Nhóm Bot Làm QTV
+- Không cần sửa cấu hình thủ công mỗi khi có nhóm mới.
+- Bất kỳ nhóm Zalo nào bot được cấp quyền **Phó nhóm hoặc Trưởng nhóm**, bot sẽ **tự động nạp vào danh sách bảo vệ** ngay lập tức.
 
----
-
-## Bản 1.16.0: Tự động rời nhóm bị Khóa Chat (Không có quyền nhắn tin) & Lệnh `/locnhom`
-
-Bản nâng cấp giúp tài khoản bot luôn sạch sẽ, chỉ giữ lại các nhóm có thể hoạt động:
-
-### 1. Tự động kiểm tra quyền nhắn tin ngay khi vào nhóm
-- **Kiểm tra tức thì:** Ngay khi bot tự động tham gia một nhóm Zalo mới qua link mời, bot đọc cài đặt nhóm (`setting.lockSendMsg`).
-- **Tự động out nhóm im lặng:** Nếu nhóm cài đặt *“Chỉ Trưởng/Phó nhóm được gửi tin nhắn”* và tài khoản bot không phải là Quản trị viên, bot sẽ **tự động rời khỏi nhóm ngay lập tức trong im lặng** (`silent: true`).
-- **Báo cáo về cho bạn:** Bot nhắn tin riêng cho người điều hành:
-  ```text
-  🚪 [TỰ ĐỘNG RỜI NHÓM KHÓA CHAT]
-  - Tên nhóm: ...
-  - ID nhóm: ...
-  - Lý do: Nhóm chỉ cho phép Trưởng/Phó nhóm nhắn tin. Bot đã tự động rời nhóm.
-  ```
-
-### 2. Tự động out nhóm khi rải link gặp lỗi khóa chat
-- Trong quá trình rải link lác đác, nếu một nhóm đột ngột khóa chat hoặc không cho thành viên thường gửi tin nhắn, bot sẽ tự động out nhóm đó, gạch tên khỏi danh sách mục tiêu và thông báo cho bạn.
-
-### 3. Lệnh chủ động lọc nhóm (`/locnhom` / `/donnhom`)
-- Bất cứ lúc nào bạn nhắn `/locnhom` (hoặc `/donnhom`), bot sẽ đi rà soát lại toàn bộ các nhóm trong danh sách.
-- Nhóm nào bị khóa chat mà bot không nhắn tin được sẽ được dọn sạch, chỉ giữ lại các nhóm thật sự sẵn sàng rải link!
+### 5. 🛠️ Bộ Lệnh Quản Trị Viên (Dành Cho QTV)
+| Lệnh | Cú pháp | Tác dụng |
+| :--- | :--- | :--- |
+| `/vipham` | `/vipham` | Xem danh sách thành viên đang có điểm vi phạm trong nhóm |
+| `/kick` | `/kick @thành_viên` | Kick trực tiếp thành viên vi phạm khỏi nhóm |
+| `/tha` | `/tha @thành_viên` | Xóa toàn bộ điểm vi phạm cho thành viên (hoặc `/xoavipham`) |
+| `/status` | `/status` hoặc `/botinfo` | Xem phiên bản, trạng thái hoạt động và số nhóm bot đang bảo vệ |
+| `/help` | `/help` | Xem danh sách các lệnh quản trị |
+| `/myid` | `/myid` | Xem UID Zalo của bản thân |
 
 ---
 
-## Bản 1.15.0: Quét toàn bộ nhóm hiện có (`/quetnhom`) & Bóc tách lệnh từ Link Preview Card
+## ⚙️ Cấu Hình (`config.json`)
 
-Bản nâng cấp mạnh mẽ cho tính năng rải link và auto-join:
-
-### 1. Quét lịch sử tất cả các nhóm bot đang tham gia (`/quetnhom` / `/quetlink`)
-- **Tự động quét:** Khi khởi động, bot tự động quét qua danh sách tất cả các nhóm mà tài khoản bot đang có mặt.
-- **Đọc lịch sử tìm link:** Đọc các tin nhắn gần nhất trong từng nhóm, bóc tách toàn bộ link mời nhóm `zalo.me/g/...` và tự động đưa vào hàng đợi `joinQueue` để join ngầm lần lượt (30s/nhóm).
-- **Lệnh chủ động:** Bạn có thể nhắn `/quetnhom` hoặc `/quetlink` bất kỳ lúc nào để bot quét lại và báo cáo thống kê:
-  * Số nhóm đã quét.
-  * Số link mời nhóm mới tìm thấy.
-  * Số link đang chờ tham gia.
-  * Tổng số nhóm mục tiêu rải link hiện có.
-
-### 2. Tự động đồng bộ nhóm mục tiêu (`/danhsachnhom`)
-- Bất kỳ nhóm nào bot đã tham gia sẽ tự động được nạp vào danh sách mục tiêu rải link (`targetGroups`).
-- Dùng lệnh `/danhsachnhom` để xem danh sách và số lượng nhóm mục tiêu hiện tại.
-
-### 3. Nhận diện lệnh thông minh chống lỗi Link Card Preview
-- Khắc phục triệt để trường hợp khi người dùng gửi link trong tin nhắn lệnh (ví dụ `/railink https://zalo.me/g/... vao de`), Zalo Desktop/Mobile tự động tạo thẻ xem trước (Link Card Preview / `chat.link`).
-- Bot giờ đây bóc tách chính xác nội dung lệnh dù Zalo đóng gói dưới dạng plain text, JSON hay rich attachment preview.
-
----
-
-## Bản 1.14.0: Tự động tham gia nhóm & Rải link lác đác chống ban (Hỗ trợ 2 tài khoản điều hành)
-
-Bản cập nhật bổ sung tính năng rải link thông minh và tự động mở rộng nhóm mục tiêu:
-
-### 1. Lệnh xem UID Zalo (`/myid`)
-- Bất kỳ ai nhắn `/myid` (nhắn riêng bot hoặc nhắn trong nhóm bot quản lý), bot sẽ trả lời ngay UID Zalo của người đó. Dùng lệnh này để lấy UID của 2 tài khoản điều hành.
-
-### 2. Phân quyền chỉ 2 tài khoản được phép kích hoạt
-- Thêm `broadcastOperatorIds: ["UID_1", "UID_2"]` vào `config.json` hoặc biến môi trường `CONFIG_JSON`.
-- Chỉ 2 tài khoản này (hoặc người trong `trustedUserIds`) mới có quyền ra lệnh rải link hoặc can thiệp nhóm. Người lạ nhắn lệnh sẽ bị từ chối.
-
-### 3. Tự động đọc tin nhắn và tham gia nhóm (`autoJoinInvites`)
-- Bot liên tục quét luồng tin nhắn trong các box được quản lý.
-- Khi phát hiện có thành viên/spammer gửi link mời nhóm Zalo (`zalo.me/g/...`), bot vừa xóa tin chặn spam (nếu bật chặn), vừa đưa link đó vào hàng đợi **tự động tham gia nhóm**.
-- Khi tham gia thành công, nhóm mới sẽ tự động được thêm vào danh sách mục tiêu rải link (`targetGroups`)!
-
-### 4. Cơ chế rải link lác đác an toàn (Anti-Ban Engine)
-- **Spin-text thông minh:** Hỗ trợ cú pháp `{Chào anh em|Hello cả nhà|Hi mọi người}` và `{link}` để mỗi nhóm nhận một nội dung ngẫu nhiên khác nhau, tránh bị Zalo phát hiện spam nội dung trùng lặp.
-- **Giãn cách ngẫu nhiên (Pacing jitter):** Sau mỗi nhóm gửi thành công, bot nghỉ ngẫu nhiên từ 60 đến 180 giây (có thể chỉnh trong `config.json`) trước khi gửi nhóm tiếp theo.
-- **Giới hạn hàng ngày (Daily cap):** Giới hạn tối đa (mặc định 30 tin/ngày) để bảo vệ tài khoản bot không bị Zalo quét tần suất.
-
-### 5. Danh sách các lệnh điều khiển (Chỉ dành cho 2 tài khoản điều hành)
-- `/myid`: Xem UID Zalo của bản thân.
-- `/railink <URL> <mẫu tin nhắn spin>`: Khởi tạo chiến dịch rải link lác đác.
-  * Ví dụ: `/railink https://zalo.me/g/xyz {Chào anh em|Hello mọi người}, mời anh em ghé giao lưu tại {link} nhé!`
-- `/stoprai`: Dừng ngay chiến dịch rải link đang chạy.
-- `/trangthairai`: Báo cáo số nhóm mục tiêu, tiến độ gửi, số tin đã gửi trong ngày.
-- `/joinnhom <link>`: Ra lệnh cho bot chủ động tham gia một nhóm Zalo qua đường link mời.
-- `/themtarget <id_nhom>`: Thêm thủ công một ID nhóm vào danh sách rải link.
-
----
-
-## Bản 1.13.0: Tự động kick sau 3 lần vi phạm (autoKick)
-
-Ở bản 1.13.0, thành viên thường vi phạm link quá 3 lần (`maxViolations: 3`) trong vòng 24 giờ sẽ được **bot tự động kick ngay lập tức khỏi nhóm** (nếu `autoKick: true`). Quản trị viên nhóm vẫn có thể xem danh sách bằng lệnh `/vipham` hoặc kick thủ công bằng `/kick @tag`.
-
----
-
-Trên Render, bot **dừng lúc khởi động** nếu chưa đặt `DATABASE_URL` hoặc `STATE_DIR`. Trước đây bot tiếp tục chạy với file cục bộ và âm thầm mất lượt vi phạm khi Render khởi động lại. Hãy cấu hình một nơi lưu bền vững theo hướng dẫn bên dưới **trước khi triển khai bản này**. Chỉ đặt `STATE_DIR` là chưa đủ: đường dẫn đó phải là mount path của Render Persistent Disk. Nếu không có nơi lưu, bot dừng và sẽ không lọc tin cho đến khi cấu hình xong.
-
-Lúc khởi động, log hiển thị loại lưu trữ và `đã_khôi_phục=N lượt còn hiệu lực`. Mỗi lần ghi thành công, log có dòng `[ĐẾM VI PHẠM]` với số lượt hiện tại. Nếu PostgreSQL lỗi ghi một lần rồi phục hồi, lần lưu tiếp theo có thể tiếp tục và ghi lại toàn bộ các lượt còn trong bộ nhớ. Những lượt đã mất trước khi có nơi lưu bền vững không thể tự khôi phục.
-
-## Bản 1.12.2: bổ sung nhận dạng ảnh và log chẩn đoán
-
-Bot nhận dạng thêm tin ảnh khi Zalo gửi loại tin chung nhưng dữ liệu đính kèm có `photoId`, `fileType: image` hoặc thông tin ảnh tương đương. GIF vẫn được cho phép nếu không có link cấm. Bot in `[BOT] phiên_bản=1.12.2` lúc chạy; khi dùng `--debug`, log cho biết tin có `cliMsgId` hay không, bot nhận dạng ảnh hay link, và quyết định xử lý. Nếu tin thiếu ID để xóa, bot ghi `[THIẾU ID]` kèm loại tin. Không cần gửi nội dung ảnh, QR hoặc phiên đăng nhập để chẩn đoán.
-
-Nếu ảnh vẫn lọt sau khi triển khai, đối chiếu **cùng ID tin** trong `[DEBUG]` với `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]`. Không có `[DEBUG]` nghĩa là listener/lịch sử không đưa tin đó tới bot; `ảnh=false` và `link=không_thấy` nghĩa là payload khác các dạng đã nhận; có lệnh xóa nhưng ảnh vẫn còn sau khi tải lại Zalo cần kiểm tra API và quyền xóa. Chỉ log của chính tin đó mới xác định được nhánh cần sửa tiếp.
-
-## Bản 1.12.1: cho phép GIF
-
-GIF của thành viên thường được giữ lại. Bot vẫn chặn ảnh tĩnh và album ảnh; QTV vẫn được gửi ảnh. Nếu caption GIF có link bị cấm, quy tắc lọc link vẫn xử lý tin đó như trước.
-
-## Bản 1.12.0: chặn ảnh của thành viên thường
-
-Bot xóa tin ảnh và album ảnh do **thành viên thường** gửi trong các nhóm được quản lý, kể cả ảnh không có link. Trưởng nhóm, phó nhóm và người trong `trustedUserIds` vẫn gửi ảnh được. Bot xác minh quyền QTV hiện tại trước khi xóa; nếu không xác minh được quyền, bot bỏ qua tin để tránh xóa nhầm ảnh của QTV. GIF, video, sticker và file thường không bị quy tắc ảnh chặn trong bản hiện tại.
-
-Thêm `"blockImages": true` vào `config.json` nếu muốn ghi rõ cấu hình. Bản này mặc định bật chặn ảnh ngay cả khi `config.json` cũ chưa có khóa đó; đặt `false` để tắt. Ảnh thường chỉ bị xóa, **không cộng số lần vi phạm link, không gửi cảnh báo link và không lập hồ sơ kick**. Ảnh có caption chứa link cấm vẫn được tính một lần vi phạm link như trước. `dryRun: true` chỉ ghi log xem trước, không xóa. Sau khi cập nhật, chạy `npm ci` và khởi động lại bot; xem `[CHẶN ẢNH] blockImages=true` trong log.
-
-## Bản 1.11.0: caption ảnh và lưu số lần vi phạm
-
-Bot đọc thêm caption nằm trong `params`/`data.params` dạng JSON của tin ảnh. Bot chỉ quét các trường chữ do người gửi viết; URL CDN của ảnh không bị tính là link quảng cáo. Nếu vẫn thấy ảnh có caption link lọt, chạy bản mới với `--debug` và gửi **dòng `[DEBUG]` của chính tin đó** cùng dòng `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` nếu có. Có link trong ảnh chụp màn hình chưa đủ để biết sự kiện ảnh đã tới bot hay API xóa có hiệu lực. Không gửi QR, cookie hoặc `SESSION_JSON`.
-
-`SESSION_JSON` chỉ giữ đăng nhập Zalo. Để lượt vi phạm và hồ sơ không bị đặt lại khi Render khởi động lại, chọn **một** nơi lưu:
-
-1. **PostgreSQL:** tạo Render Postgres, sao chép **Internal Database URL** vào biến môi trường `DATABASE_URL` của dịch vụ bot, cùng vùng Render với dịch vụ. Bot tạo bảng `zalo_link_guard_state` và dùng lại dữ liệu sau mỗi lần khởi động. Giữ URL này riêng tư. Dùng một tiến trình bot cho một cơ sở dữ liệu; nếu hai tiến trình cùng ghi, bot sẽ từ chối ghi đè trạng thái cũ. [Cách tạo và kết nối Render Postgres](https://render.com/docs/postgresql-creating-connecting).
-2. **Ổ đĩa bền vững:** gắn Render Persistent Disk vào dịch vụ trả phí, ví dụ mount path `/var/data`, rồi đặt biến môi trường `STATE_DIR=/var/data`. Bot lưu `moderation-state.json` trên ổ này. Chỉ đặt biến `STATE_DIR` mà chưa gắn disk **không** bảo đảm dữ liệu còn sau khi restart. [Render Persistent Disks](https://render.com/docs/disks).
-
-Nếu có cả hai biến, bot ưu tiên `DATABASE_URL`. Khi chưa có cả hai, bản 1.12.3 dừng trên Render và báo lỗi `[LƯU VI PHẠM]`; chạy trên máy cá nhân vẫn có thể dùng file cục bộ. Render Postgres gói miễn phí hết hạn sau 30 ngày, nên cần nâng cấp hoặc chuyển dữ liệu trước hạn nếu muốn lưu lâu dài. [Giới hạn gói miễn phí Render](https://render.com/docs/free). Sau khi deploy, tìm dòng `[LƯU VI PHẠM] PostgreSQL (DATABASE_URL)` hoặc `file trong STATE_DIR` cùng dòng `đã_khôi_phục=N` trong log. Những lượt đã mất trước khi gắn nơi lưu bền vững không thể tự khôi phục; bot chỉ có thể nhập `moderation-state.json` cũ nếu file đó còn trong thư mục chạy lúc khởi động lần đầu với database/disk.
-
-## Bản 1.10.0
-
-Tin có link do **trưởng nhóm hoặc phó nhóm** gửi được bỏ qua hoàn toàn: không xóa, không cảnh báo, không cộng vi phạm và không lập hồ sơ kick. Bot xác minh quyền hiện tại qua `getGroupInfo` trước khi xử lý mỗi tin có link; nếu không xác minh được thì bỏ qua tin đó và ghi `[KIỂM TRA QTV]` để tránh xử lý nhầm QTV. Người trong `trustedUserIds` vẫn được miễn như trước.
-
-Nếu API đọc lịch sử nhóm cũ trả 404, bot thử chuyển sang endpoint lịch sử cloud bằng hook `custom` của `zca-js`. Bản sửa này dựa trên [PR #370 của thư viện](https://github.com/RFS-ADRENO/zca-js/pull/370/files), hiện chưa được phát hành chính thức; cần xem log sau khi triển khai để xác nhận trên cộng đồng của bạn. Listener cũng bật chế độ kết nối lại và ghi các sự kiện `[KẾT NỐI]`. Nếu cả hai đường lịch sử đều lỗi, bot chỉ còn nhận tin trực tiếp và vẫn có thể bỏ lỡ tin.
-
-Sau khi cập nhật, dừng tiến trình cũ và chạy bản mới. Giữ nguyên `config.json`, `moderation-state.json` và `SESSION_JSON`; không phải quét QR lại khi phiên còn hiệu lực. Chạy `npm start -- --debug` để xem bot nhận và quyết định thế nào với một tin ảnh có caption chứa link. Dòng `[API XÓA TRẢ VỀ]` của một tin khác không xác nhận tin ảnh đó đã được xử lý.
-
-## Bản 1.9.0
-
-Bot có thể đăng nhập bằng biến môi trường `SESSION_JSON`. Sau lần quét QR thành công trên máy cá nhân, bot tự lưu thông tin đăng nhập vào `zalo-session.json` trong thư mục chạy. File này được bỏ qua bởi Git; không in cookie lên console. Trên Render, bot yêu cầu `SESSION_JSON` và dừng với thông báo rõ ràng nếu biến bị thiếu, sai định dạng hoặc phiên bị Zalo từ chối. Phiên có thể hết hạn hoặc bị thu hồi; khi đó phải tạo phiên mới bằng QR. Tính năng này không bảo đảm tránh bị hạn chế tài khoản.
-
-### Dùng trên Render
-
-1. Trên máy cá nhân, cập nhật bản này, chạy `npm ci` rồi `npm start -- --list-groups`. Quét QR một lần. Bot tạo file `zalo-session.json` trong thư mục chạy; mở file bằng trình soạn thảo văn bản và sao chép **toàn bộ một dòng JSON**.
-2. Trong Render Dashboard của dịch vụ bot, vào **Environment → Add Environment Variable**: Key `SESSION_JSON`, Value là một dòng JSON vừa sao chép. Chọn **Save and deploy**. Dịch vụ cũng cần có `config.json` hợp lệ; có thể cấp qua Render Secret File tên `config.json`.
-3. Xem log Render: dòng `Đã đăng nhập bằng SESSION_JSON.` xác nhận bot đã nạp phiên. Nếu phiên hết hạn, chạy lại bước 1 trên máy cá nhân và thay giá trị biến môi trường. Không dán JSON vào GitHub, chat, issue hay log.
-
-Nếu đặt `SESSION_JSON` ngay trên máy cá nhân, bot cũng dùng lại phiên mà không hiện QR. File `zalo-session.json` là thông tin đăng nhập nhạy cảm; giữ riêng tư và xóa bản sao không còn dùng. Đăng nhập bằng phiên chỉ hoạt động khi Zalo vẫn chấp nhận cookie, IMEI và user agent đã lưu.
-
-## Bản 1.8.0
-
-Bot đọc `description`/`desc` của tin kèm ảnh dù Zalo gửi loại tin khác `chat.photo`, và đọc được trường hợp dữ liệu ảnh là JSON dạng chữ. URL ảnh từ CDN trong `href`/`url` vẫn không bị xem là link quảng cáo. Tin chưa thấy link ở sự kiện trực tiếp không bị đánh dấu đã xử lý, để lần đọc lịch sử có thể kiểm tra lại caption. Nếu Zalo báo lỗi xóa, bot vẫn ghi đúng một lượt vi phạm cho tin đó và có thể thử xóa lại khi quét lịch sử.
-
-Sau khi thay mã nguồn, **dừng tiến trình cũ rồi chạy bản mới**; chỉ thay file ZIP trên máy sẽ không cập nhật bot đang chạy. Giữ lại `config.json` và `moderation-state.json`. Nếu cùng một tin vẫn lọt, chạy `npm start -- --debug` và xem các dòng `[DEBUG]`, `[API XÓA TRẢ VỀ]` hoặc `[LỖI XÓA]` lúc gửi tin thử. Không chia sẻ QR hoặc cookie đăng nhập.
-
-Bot theo dõi các nhóm Zalo bạn chỉ định và gửi lệnh xóa tin có đường link ngoài danh sách tên miền được phép. Bot dùng `zca-js`, một thư viện **không chính thức** đăng nhập Zalo Web bằng QR. Tài khoản chạy bot cần là trưởng nhóm hoặc phó nhóm có quyền xóa tin và kick thành viên. Zalo có thể thay đổi giao diện web hoặc hạn chế tài khoản; không có bảo đảm bot sẽ hoạt động mãi.
-
-Bot dùng `deleteMessage` để xóa tin. Bot chỉ dùng `removeUserFromGroup` khi QTV duyệt một hồ sơ đủ điều kiện hoặc chính QTV gửi lệnh `/kick @tag`. Mỗi lệnh kick chỉ có một ID thành viên. Hãy thử trong một nhóm nhỏ với `dryRun: true` trước khi bật thật.
-
-## Cài và chạy trên Windows
-
-Cần Node.js 18 trở lên. Mở PowerShell trong thư mục này:
-
-```powershell
-npm ci
-npm start -- --list-groups
+```json
+{
+  "groupIds": [
+    "8623577123597443914",
+    "908709376055683451"
+  ],
+  "trustedUserIds": [
+    "632992889887914287",
+    "6314752836073016389",
+    "445532160147034569"
+  ],
+  "allowedDomains": ["zalo.me"],
+  "blockZaloLinks": true,
+  "blockZaloGroupInvites": true,
+  "blockImages": true,
+  "silentModeration": true,
+  "maxViolations": 3,
+  "autoKick": true,
+  "violationWindowHours": 24,
+  "historySweepSeconds": 60,
+  "dryRun": false
+}
 ```
 
-Nếu chưa có `SESSION_JSON`, mở `zalo-login-qr.png` xuất hiện trong thư mục và quét bằng tài khoản Zalo quản trị nhóm. Lệnh sẽ in ID và tên các nhóm. Bot xóa file QR sau khi đăng nhập và lưu phiên vào `zalo-session.json`. Không chia sẻ mã QR hay file phiên.
+### Giải thích các tham số:
+* `groupIds`: Danh sách ID các nhóm cần bảo vệ (bot cũng sẽ tự động bảo vệ thêm bất kỳ nhóm nào bot là QTV).
+* `trustedUserIds`: Danh sách UID các tài khoản được miễn trừ kiểm duyệt (chủ bot, admin dự phòng).
+* `allowedDomains`: Danh sách tên miền được phép gửi vào nhóm.
+* `blockZaloLinks`: Chặn cả các đường link Zalo khác ngoài link cho phép.
+* `blockZaloGroupInvites`: Chặn link mời nhóm `zalo.me/g/...` (chống cướp mem / spam nhóm).
+* `blockImages`: `true` để xóa ảnh và album ảnh của thành viên thường.
+* `silentModeration`: `true` để xóa và kick âm thầm không spam thông báo vào box chat.
+* `maxViolations`: Số lần vi phạm tối đa trước khi bị kick (mặc định 3).
+* `autoKick`: `true` để tự động kick khi đủ số lần vi phạm.
+* `violationWindowHours`: Khoảng thời gian tính điểm vi phạm (mặc định 24 giờ, sau 24h điểm tự xóa).
+* `dryRun`: `false` để thực thi thật; `true` để chỉ chạy thử nghiệm không xóa thật.
 
-Sao chép `config.example.json` thành `config.json`. Điền một hoặc nhiều ID nhóm vào `groupIds`. Thêm ID của những người được phép đăng link vào `trustedUserIds`, và tên miền được phép vào `allowedDomains`. Danh sách mặc định rỗng nên mọi link đều bị lọc. Tên miền trong danh sách cũng cho phép các tên miền con. `zalo.me` không cho phép `evilzalo.me`. `blockZaloLinks: true` chặn mọi link `zalo.me` và tên miền con, kể cả khi cấu hình cũ đã thêm `zalo.me` vào `allowedDomains`. Nếu muốn cho phép link Zalo thường, đặt `blockZaloLinks: false`; giữ `blockZaloGroupInvites: true` để vẫn chặn link mời nhóm `/g/...`.
+---
 
-`violationWindowHours` mặc định là `24`. `historySweepSeconds` mặc định là `60`: mỗi phút bot đọc 50 tin gần nhất trong mỗi nhóm để nhặt tin **mới từ khi bot khởi động** mà kết nối nhận tin đã lỡ. Nếu endpoint cũ báo 404, bot thử endpoint lịch sử cloud. Đặt `0` để tắt; giá trị khác phải từ `30` đến `300` giây. Bot không quét tin cũ trước lúc khởi động. Nhóm quá nhiều tin trong một phút vẫn có thể vượt quá 50 tin gần nhất. Nhóm được giám sát cần có ít nhất một QTV là người thật, khác tài khoản chạy bot, để duyệt hồ sơ. Nếu bạn có **nhóm riêng chỉ dành cho QTV** mà tài khoản bot là thành viên, có thể thêm `"reviewGroupId": "ID_NHOM_QTV"` vào `config.json`. Bot sẽ gửi hồ sơ vào nhóm đó và nhắn riêng cho trưởng/phó nhóm. Nếu không có `reviewGroupId`, bot chỉ nhắn riêng cho các QTV. Zalo có thể từ chối tin nhắn riêng; bot sẽ ghi lỗi và giữ hồ sơ chờ duyệt.
+## 🌐 Trang Web Dashboard & Chẩn Đoán Trực Tiếp
+Khi chạy trên Cloud (Render / VPS):
+* **Trang chủ (`/`):** Giao diện web hiển thị trạng thái bot trực quan, số nhóm đang bảo vệ và thời gian hoạt động.
+* **Trang chẩn đoán (`/debug`):** Xem chi tiết cấu hình hiện tại và 50 log kiểm duyệt gần nhất theo thời gian thực.
+* **Health check (`/ping`):** Phục vụ UptimeRobot hoặc Render health check giữ bot luôn online 24/7.
 
-```powershell
-Copy-Item config.example.json config.json
-notepad config.json
-npm start
-```
+---
 
-Ban đầu `dryRun` là `true`: bot chỉ ghi dòng `[XEM TRƯỚC]` khi thấy tin phù hợp; không xóa tin, gửi cảnh báo hay ghi lượt vi phạm. Lệnh kick cũng không kick khi `dryRun` bật. Lúc khởi động bot in cảnh báo `[CHỈ XEM TRƯỚC]` nếu chế độ này còn bật, và in `[KIỂM TRA NHÓM]` gồm tên nhóm và quyền QTV của tài khoản bot. Gửi vài tin thử vào nhóm, kiểm tra log, rồi đổi `dryRun` thành `false` và chạy lại `npm start` để bật xử lý thật. Giữ cửa sổ PowerShell đang chạy; đóng cửa sổ sẽ dừng bot. Muốn bỏ qua QR trên máy cá nhân, đặt biến môi trường `SESSION_JSON` bằng nội dung file phiên đã lưu.
+## 🚀 Triển Khai Lên Render (24/7)
 
-Nếu có link mà bot không xử lý, chạy `npm start -- --debug` rồi gửi một tin thử từ **tài khoản khác**. Dòng `[DEBUG]` cho biết `nguồn=live` hoặc `nguồn=history`, ID nhóm, loại tin, tên các trường dữ liệu và tên miền bot nhận được; bot không in nguyên nội dung tin. Xem thêm `trong_cấu_hình`, `tin_cậy`, `dryRun` và `quyết_định` để tìm lý do bị bỏ qua. Nếu có `[XEM TRƯỚC]`, đổi `dryRun` thành `false` và khởi động lại. Nếu có `[LỖI XÓA]`, tài khoản có thể thiếu quyền xóa tin của người khác hoặc API của thư viện đã thay đổi. `[API XÓA TRẢ VỀ]` chỉ cho biết thư viện đã nhận phản hồi; nếu tin còn hiển thị sau khi tải lại Zalo, kiểm tra quyền QTV và trạng thái thực tế của tin. Nếu không có `[DEBUG]` sau hơn một phút, kiểm tra `[KIỂM TRA LỊCH SỬ]`, kết nối Zalo, bot còn chạy và tài khoản đăng nhập đã ở trong nhóm.
-
-## Quy tắc lọc
-
-- Chỉ xử lý tin của người khác trong `groupIds`.
-- Bỏ qua người trong `trustedUserIds`.
-- Bỏ qua trưởng/phó nhóm theo quyền hiện tại trên Zalo, kể cả khi họ gửi link; không xóa hoặc cảnh báo tin của họ.
-- Nhận dạng link dạng `https://`, `www.`, tên miền thường gặp, `hxxps://` và dấu chấm viết thành `[.]`. Link `zalo.me/g/` bị xuống dòng trước mã mời cũng được ghép lại.
-- Nếu tin chứa ít nhất một tên miền ngoài `allowedDomains`, bot thử xóa **cả tin**. Vì vậy, hãy thêm các tên miền hợp lệ trước khi bật xóa.
-- Mọi link `zalo.me` luôn bị lọc theo cấu hình mặc định, kể cả khi `allowedDomains` có `zalo.me`. Có thể điều chỉnh bằng `blockZaloLinks` và `blockZaloGroupInvites`.
-- Bot đọc văn bản, một số dạng nội dung văn bản được Zalo gói trong object, chú thích ảnh/video/file (gồm trường `description` của tin `chat.photo`), và tin xem trước link `chat.link` hoặc `chat.recommended`. Đường dẫn nội bộ của ảnh và file không bị coi là link quảng cáo. Link được in bên trong ảnh hoặc mã QR cần OCR và hiện chưa được đọc.
-
-## Cảnh báo, duyệt và kick
-
-Mỗi **tin nhắn** có link bị cấm tính là một lần vi phạm, dù tin có nhiều link. Trong khoảng thời gian `violationWindowHours` (mặc định 24 giờ), bot cảnh báo ở lần 1/3, 2/3. Đến **lần thứ 3**, bot sẽ **tự động kick ngay thành viên vi phạm khỏi nhóm** (chế độ mặc định `autoKick: true`). Nếu bot chưa có quyền kick hoặc kick thất bại, bot sẽ tự động tạo hồ sơ `#HO_SO` chờ QTV duyệt bằng `/duyetkick`. Nếu muốn tắt tự động kick và chuyển sang chỉ duyệt thủ công, đặt `"autoKick": false` trong `config.json`.
-
-QTV của nhóm có thể gửi các lệnh sau trong nhóm gốc hoặc nhắn riêng cho tài khoản bot:
-
-```text
-/vipham                 Xem số lần vi phạm còn hiệu lực và hồ sơ chờ duyệt
-/duyetkick MA_HO_SO      Duyệt và kick đúng một thành viên trong hồ sơ
-/tuchoikick MA_HO_SO     Từ chối hồ sơ, đặt lại bộ đếm
-```
-
-Khi QTV gửi `/vipham` **trong nhóm gốc**, bot trả tối đa 10 thành viên có vi phạm còn hiệu lực tại nhóm đó, gồm cả người mới vi phạm 1–3 lần và người có hồ sơ chờ duyệt. Danh sách có tag `@TênThànhViên` thật để bấm xem người vi phạm. Với hồ sơ chờ duyệt, bot ghi riêng số tin trong hồ sơ và số lần hiện còn trong cửa sổ thời gian. Thông báo lập hồ sơ trong nhóm cũng tag người đó. Khi gửi `/vipham` qua tin riêng hoặc trong nhóm QTV riêng, bot gửi danh sách của các nhóm mà người ra lệnh đang là QTV qua tin riêng với `@TênThànhViên` dạng chữ; bot chỉ gắn mention thật ở nhóm gốc. UID vẫn được lưu nội bộ để duyệt kick chính xác nhưng không hiện làm tên chính của người vi phạm. Hồ sơ cũ sẽ lấy tên hiện tại từ danh sách thành viên nhóm nếu có. Nếu chưa có tin vi phạm còn hiệu lực, bot nói rõ danh sách đang trống; nếu không phải QTV, bot báo thiếu quyền.
-
-Lệnh trực tiếp dưới đây chỉ dùng **trong nhóm gốc**:
-
-```text
-/kick @TênThànhViên      QTV tag đúng một người và kick ngay
-```
-
-Bot xác minh người ra lệnh là trưởng/phó nhóm hiện tại qua Zalo trước mỗi lần kick. Bot không chấp nhận `@all`, nhiều tag, QTV, tài khoản bot, hoặc người trong `trustedUserIds` làm mục tiêu. Lệnh `/kick @tag` là hành động trực tiếp của QTV nên không đi qua hồ sơ vi phạm. Nếu QTV bấm `/duyetkick`, bot kiểm tra lại hồ sơ, quyền QTV và mục tiêu trước khi gọi API kick.
-
-`moderation-state.json` lưu các lần vi phạm, link, tên hiển thị, hồ sơ và lịch sử kick trên máy chạy bot; file này không nằm trong ZIP hay Git. Giữ file này riêng tư. Đừng xóa file khi bot đang chạy. Nếu tin riêng tới QTV bị chặn, có thể cấu hình nhóm QTV riêng qua `reviewGroupId` để nhận hồ sơ.
-
-Nếu nâng cấp từ bản bot trước: dừng bot, giữ lại `config.json` và `moderation-state.json`, thay các file mã nguồn bằng bản mới, chạy `npm ci`, rồi kiểm tra với `dryRun: true`. `blockZaloLinks`, `historySweepSeconds`, `violationWindowHours` và `reviewGroupId` là tùy chọn; cấu hình cũ vẫn chạy. Bot không đọc hoặc điều khiển mã của một bot khác đang chạy trên máy.
-
-Nếu lệnh xóa báo lỗi, kiểm tra quyền quản trị nhóm và tài khoản đăng nhập. Thư viện không chính thức có thể không tương thích khi Zalo cập nhật. Bot ghi ID nhóm, người gửi, tin và tên miền vào console để kiểm tra; file trạng thái lưu tối đa bốn link làm bằng chứng cho mỗi hồ sơ. Khi đăng nhập QR, bot lưu cookie vào `zalo-session.json` và bỏ qua file này khi dùng Git.
-
-## Kiểm tra
-
-```powershell
-npm test
-```
+1. **GitHub:** Đẩy code lên repository cá nhân của bạn.
+2. **Render Dashboard:** Tạo một **Web Service** mới trỏ vào repo GitHub.
+3. **Cấu hình Environment Variables:**
+   - `SESSION_JSON`: Chuỗi JSON thông tin đăng nhập tài khoản Zalo.
+   - `CONFIG_JSON`: Toàn bộ nội dung file `config.json`.
+   - `DATABASE_URL`: (Tùy chọn) Chuỗi kết nối PostgreSQL để lưu điểm vi phạm vĩnh viễn qua các lần khởi động lại.
+4. **Deploy & Hoàn tất:** Chọn **Manual Deploy** ➔ **Deploy latest commit**. Bot sẽ tự động kết nối Zalo và bảo vệ các nhóm ngay lập tức!

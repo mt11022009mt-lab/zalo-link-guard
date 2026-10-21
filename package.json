@@ -1,6 +1,6 @@
 {
   "name": "zalo-link-guard",
-  "version": "1.16.4",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -44,6 +44,10 @@ const manualKick = (sender = ADMIN, mentions = [{ uid: MEMBER, pos: 6, len: 7, t
   type: 1, isSelf: false, threadId: GROUP,
   data: { uidFrom: sender, content: "/kick @Member", mentions },
 });
+const manualTha = (sender = ADMIN, mentions = [{ uid: MEMBER, pos: 5, len: 7, type: 0 }]) => ({
+  type: 1, isSelf: false, threadId: GROUP,
+  data: { uidFrom: sender, content: "/tha @Member", mentions },
+});
 
 test("three zalo.me messages create a review case when autoKick is false; only a live admin approval kicks one member", async (t) => {
   const { state, sent, kicked, moderation } = fixture(t, { allowedDomains: ["zalo.me"], autoKick: false });
@@ -301,4 +305,25 @@ test("manual kick waits for durable storage before calling Zalo", async (t) => {
   await moderation.handleCommand(manualKick());
   assert.equal(kicked.length, 0);
   assert.match(sent.at(-1).text, /Database unavailable/);
+});
+
+test("/tha clears strikes for a tagged member", async (t) => {
+  const { state, sent, moderation } = fixture(t);
+  for (let id = 1; id <= 2; id++) {
+    state.recordViolation({ groupId: GROUP, userId: MEMBER, messageId: String(id), links: [{ url: "spam.site" }] });
+  }
+  assert.equal(state.listViolations()[0].count, 2);
+  await moderation.handleCommand(manualTha(MEMBER)); // Member cannot clear
+  assert.equal(state.listViolations()[0].count, 2);
+  await moderation.handleCommand(manualTha(ADMIN)); // Admin clears
+  assert.equal(state.listViolations().length, 0);
+  assert.match(sent.at(-1).text, /Đã xóa lịch sử vi phạm/);
+});
+
+test("/status and /help commands respond with bot information and guide", async (t) => {
+  const { sent, moderation } = fixture(t);
+  await moderation.handleCommand(approval("/status"));
+  assert.match(sent.at(-1).text, /ZALO LINK GUARD BOT/);
+  await moderation.handleCommand(approval("/help"));
+  assert.match(sent.at(-1).text, /CÁC LỆNH QUẢN TRỊ VIÊN/);
 });

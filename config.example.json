@@ -1,7 +1,7 @@
 {
   "groupIds": ["THAY_BANG_ID_NHOM"],
   "trustedUserIds": [],
-  "allowedDomains": [],
+  "allowedDomains": ["zalo.me"],
   "blockZaloLinks": true,
   "blockZaloGroupInvites": true,
   "blockImages": true,
@@ -10,14 +10,5 @@
   "autoKick": true,
   "violationWindowHours": 24,
   "historySweepSeconds": 60,
-  "dryRun": true,
-  "broadcastOperatorIds": ["UID_ACC_1", "UID_ACC_2"],
-  "broadcast": {
-    "enabled": true,
-    "minDelaySeconds": 60,
-    "maxDelaySeconds": 180,
-    "maxSendsPerDay": 30,
-    "autoJoinInvites": true,
-    "dryRun": false
-  }
+  "dryRun": false
 }
