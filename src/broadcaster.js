@@ -174,7 +174,18 @@ export function createBroadcaster({
   async function stepJoinWorker() {
     if (isJoining || !joinQueue.length) return;
     const now = clock();
-    const joinCooldown = (config.broadcast?.joinDelaySeconds ?? 30) * 1000;
+    const today = new Date(now).toISOString().slice(0, 10);
+    if (!store.data.dailyJoins || store.data.dailyJoins.date !== today) {
+      store.data.dailyJoins = { date: today, count: 0 };
+    }
+    const maxJoinsPerDay = config.broadcast?.maxJoinsPerDay ?? 20;
+    if (store.data.dailyJoins.count >= maxJoinsPerDay) {
+      return;
+    }
+
+    const minDelay = (config.broadcast?.minJoinDelaySeconds ?? config.broadcast?.joinDelaySeconds ?? 45) * 1000;
+    const maxDelay = (config.broadcast?.maxJoinDelaySeconds ?? 90) * 1000;
+    const joinCooldown = Math.max(minDelay, Math.floor(minDelay + randomFn() * Math.max(0, maxDelay - minDelay)));
     if (now - lastJoinAt < joinCooldown) return;
 
     const link = joinQueue.shift();
@@ -187,6 +198,7 @@ export function createBroadcaster({
         await api.joinGroupLink(link);
       }
       store.data.joinedLinks.push(link);
+      store.data.dailyJoins.count++;
 
       let newlyAddedGid = null;
       let newlyAddedName = "";
@@ -270,6 +282,13 @@ export function createBroadcaster({
         store.data.joinedLinks.push(link);
         store.save();
         log.info(`[CHỜ DUYỆT] Nhóm ${link} cần phê duyệt. Đang đợi QTV duyệt (không spam tin nhắn điều hành).`);
+      }
+
+      const isRateLimited = err.code === 216 || err.code === 221 ||
+        /giới hạn|gioi han|limit|quá nhanh|qua nhanh|tạm thời|tam thoi/i.test(errStr);
+      if (isRateLimited) {
+        log.warn(`[TẠM NGHỈ AUTO-JOIN] Zalo báo đạt giới hạn (${err.message}). Tạm ngưng join nhóm 30 phút để dưỡng nick.`);
+        lastJoinAt = clock() + 30 * 60 * 1000;
       }
     } finally {
       isJoining = false;
