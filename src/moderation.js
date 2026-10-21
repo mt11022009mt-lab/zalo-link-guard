@@ -55,7 +55,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|deepseek)(?:\s|$)/i;
 
 export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
@@ -136,7 +136,7 @@ function combineCases(entries) {
   return { msg, mentions };
 }
 
-export function createModeration({ api, config, state, log = console }) {
+export function createModeration({ api, config, state, aiService, log = console }) {
   const ownId = String(api.getOwnId());
   const kicksInFlight = new Set();
   const windowHours = config.violationWindowHours ?? 24;
@@ -232,11 +232,53 @@ export function createModeration({ api, config, state, log = console }) {
 
   async function handleCommand(message) {
     const text = getCommandText(message);
+    const mentions = message.data?.mentions;
+    const isGroup = message.type === ThreadType.Group;
+    const senderId = String(message.data?.uidFrom || message.threadId);
+    const isBotTagged = isGroup && Array.isArray(mentions) && mentions.some((m) => String(m.uid) === ownId);
+
+    // 1. Tag @Bot trong nhóm để trò chuyện AI
+    if (aiService && isBotTagged) {
+      let prompt = typeof text === "string" ? text : "";
+      for (const m of mentions) {
+        if (String(m.uid) === ownId && typeof prompt === "string") {
+          const mentionStr = prompt.slice(m.pos, m.pos + m.len);
+          prompt = prompt.replace(mentionStr, "").trim();
+        }
+      }
+      prompt = prompt.replace(/^@\S+\s*/, "").trim();
+      if (!prompt) {
+        await reply(message, "👋 Chào bạn! Bạn có thể hỏi mình bất cứ điều gì bằng cách tag @mình kèm câu hỏi, hoặc dùng lệnh: /ai <câu hỏi> nhé!");
+        return true;
+      }
+      const cooldown = aiService.checkCooldown(senderId);
+      if (!cooldown.allowed) {
+        await reply(message, `⏳ Bạn hỏi nhanh quá, vui lòng chờ ${cooldown.waitSec} giây nhé!`);
+        return true;
+      }
+      const senderName = message.data?.dName || "Thành viên";
+      const answer = await aiService.ask(prompt, { senderName });
+      await reply(message, answer);
+      return true;
+    }
+
+    // 2. Nhắn tin riêng (DM) với Bot (tự động hỏi AI)
+    if (aiService && !isGroup && typeof text === "string" && text.trim() && !text.trim().startsWith("/")) {
+      const cooldown = aiService.checkCooldown(senderId);
+      if (!cooldown.allowed) {
+        await reply(message, `⏳ Bạn nhắn nhanh quá, vui lòng chờ ${cooldown.waitSec} giây nhé!`);
+        return true;
+      }
+      const senderName = message.data?.dName || "Bạn";
+      const answer = await aiService.ask(text.trim(), { senderName });
+      await reply(message, answer);
+      return true;
+    }
+
     if (!text) return false;
     const matched = text.match(COMMAND_RE);
     if (!matched) return false;
     const command = matched[1].toLowerCase();
-    const senderId = String(message.data?.uidFrom || message.threadId);
 
     if (command === "myid") {
       await reply(message, `UID Zalo của bạn là: ${senderId}`);
@@ -405,6 +447,27 @@ export function createModeration({ api, config, state, log = console }) {
       return true;
     }
 
+    if (["ai", "ask", "chat", "deepseek"].includes(command)) {
+      const prompt = text.replace(COMMAND_RE, "").trim();
+      if (!prompt) {
+        await reply(message, "💡 Cú pháp: /ai <câu hỏi của bạn>\nVí dụ: /ai giải thích hiện tượng nhật thực");
+        return true;
+      }
+      if (!aiService) {
+        await reply(message, "🤖 Module AI chưa được khởi tạo trên hệ thống.");
+        return true;
+      }
+      const cooldown = aiService.checkCooldown(senderId);
+      if (!cooldown.allowed) {
+        await reply(message, `⏳ Bạn hỏi nhanh quá, vui lòng chờ ${cooldown.waitSec} giây nữa nhé!`);
+        return true;
+      }
+      const senderName = message.data?.dName || "Thành viên";
+      const answer = await aiService.ask(prompt, { senderName });
+      await reply(message, answer);
+      return true;
+    }
+
     if (command === "botinfo" || command === "status") {
       const isGroup = message.type === ThreadType.Group;
       const targetGid = String(message.threadId);
@@ -412,12 +475,13 @@ export function createModeration({ api, config, state, log = console }) {
       const groupLine = isGroup
         ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}`
         : "";
-      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.0.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (Không spam tin cảnh báo)" : "TẮT"}`);
+      const aiStatus = aiService?.isConfigured?.() ? "🟢 ĐÃ KÍCH HOẠT (DeepSeek)" : "⚪ Chưa cấu hình DEEPSEEK_API_KEY";
+      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.1.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Trợ lý AI DeepSeek: ${aiStatus}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (100% Silent)" : "TẮT"}`);
       return true;
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN:\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /ai <câu hỏi> : Trò chuyện siêu tốc với AI DeepSeek (hoặc tag @bot trong nhóm).\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

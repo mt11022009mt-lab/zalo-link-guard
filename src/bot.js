@@ -9,6 +9,7 @@ import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
 import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
+import { AIService } from "./ai-service.js";
 
 // Chống crash đột tử do lỗi mạng hoặc unhandled rejection từ WebSocket / Zalo API
 process.on("unhandledRejection", (reason) => {
@@ -264,7 +265,14 @@ try {
 } catch (error) {
   console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
-const moderation = createModeration({ api, config, state });
+const aiService = new AIService({
+  apiKey: process.env.DEEPSEEK_API_KEY || config.deepseekApiKey,
+  model: process.env.DEEPSEEK_MODEL || config.deepseekModel || "deepseek-chat",
+  baseUrl: process.env.DEEPSEEK_BASE_URL || config.deepseekBaseUrl || "https://api.deepseek.com",
+});
+console.log(`[TRỢ LÝ AI] DeepSeek API: ${aiService.isConfigured() ? "Đã cấu hình" : "Chưa gắn DEEPSEEK_API_KEY"} (model=${aiService.model})`);
+
+const moderation = createModeration({ api, config, state, aiService });
 
 // Tự động quét và kích hoạt bảo vệ cho tất cả nhóm bot làm Quản trị viên / Phó nhóm
 async function syncProtectedGroups() {
@@ -310,7 +318,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|deepseek)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 

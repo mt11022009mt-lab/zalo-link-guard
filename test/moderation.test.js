@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { ModerationState } from "../src/moderation-state.js";
 import { createModeration, parseManualKickTarget } from "../src/moderation.js";
 import { checkMessage } from "../src/policy.js";
+import { AIService } from "../src/ai-service.js";
 
 const GROUP = "700001";
 const BOT = "900001";
@@ -29,7 +30,7 @@ function fixture(t, overrides = {}) {
     sendMessage: async (text, id, type) => { sent.push({ text, id, type }); },
     removeUserFromGroup: async (id, groupId) => { kicked.push({ id, groupId }); return { errorMembers: [] }; },
   };
-  const moderation = createModeration({ api, config: { ...config, ...overrides }, state, log: logger });
+  const moderation = createModeration({ api, config: { ...config, ...overrides }, state, aiService: overrides.aiService, log: logger });
   return { api, state, sent, kicked, moderation };
 }
 
@@ -345,4 +346,63 @@ test("/tatbot and /batbot toggle group moderation status", async (t) => {
   // Status shows active
   await moderation.handleCommand(approval("/status", ADMIN));
   assert.match(sent.at(-1).text, /ĐANG BẬT/);
+});
+
+test("/ai command provides syntax guide and config guidance", async (t) => {
+  const aiService = new AIService();
+  const { sent, moderation } = fixture(t, { aiService });
+
+  // Empty prompt
+  await moderation.handleCommand(approval("/ai"));
+  assert.match(sent.at(-1).text, /Cú pháp: \/ai <câu hỏi của bạn>/);
+
+  // Unconfigured API key
+  await moderation.handleCommand(approval("/ai hôm nay trời đẹp không?"));
+  assert.match(sent.at(-1).text, /chưa được kích hoạt/);
+});
+
+test("/ai command answers questions and enforces cooldown", async (t) => {
+  const aiService = new AIService({ apiKey: "sk-test-key-123456" });
+  aiService.ask = async (prompt) => `DeepSeek trả lời cho: ${prompt}`;
+  const { sent, moderation } = fixture(t, { aiService });
+
+  // Normal question
+  await moderation.handleCommand(approval("/ai thời tiết hôm nay thế nào?", MEMBER));
+  assert.equal(sent.at(-1).text, "DeepSeek trả lời cho: thời tiết hôm nay thế nào?");
+
+  // Rapid question within cooldown
+  await moderation.handleCommand(approval("/ai câu hỏi tiếp theo?", MEMBER));
+  assert.match(sent.at(-1).text, /Bạn hỏi nhanh quá/);
+});
+
+test("tagging @Bot in group triggers AI assistant", async (t) => {
+  const aiService = new AIService({ apiKey: "sk-test-key-123456" });
+  aiService.ask = async (prompt) => `Trợ lý AI trả lời: ${prompt}`;
+  const { sent, moderation } = fixture(t, { aiService });
+
+  // Tag bot without prompt
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: MEMBER, content: "@Bot", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /Chào bạn! Bạn có thể hỏi mình bất cứ điều gì/);
+
+  // Tag bot with question
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: MEMBER, content: "@Bot ai là người phát minh máy tính?", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /Trợ lý AI trả lời: ai là người phát minh máy tính\?/);
+});
+
+test("direct message (DM) to bot automatically calls AI", async (t) => {
+  const aiService = new AIService({ apiKey: "sk-test-key-123456" });
+  aiService.ask = async (prompt) => `DM AI: ${prompt}`;
+  const { sent, moderation } = fixture(t, { aiService });
+
+  await moderation.handleCommand({
+    type: 0, isSelf: false, threadId: MEMBER,
+    data: { uidFrom: MEMBER, content: "Xin chào bot" },
+  });
+  assert.equal(sent.at(-1).text, "DM AI: Xin chào bot");
 });
