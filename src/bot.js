@@ -44,7 +44,7 @@ let lastMessageTime = null;
 
 // Khởi chạy HTTP Server để Render không bị timeout port scan và UptimeRobot ping 24/7
 const PORT = Number(process.env.PORT) || 3000;
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   if (req.url === "/ping" || req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     return res.end(JSON.stringify({
@@ -58,10 +58,14 @@ const server = createServer((req, res) => {
     }));
   }
 
-  if (req.url.startsWith("/group")) {
-    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+  if (req.url?.startsWith("/group")) {
+    const urlObj = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const gid = urlObj.searchParams.get("id") || config?.groupIds?.[0];
     try {
+      if (!api || typeof api.getGroupInfo !== "function") {
+        res.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
+        return res.end(JSON.stringify({ error: "Bot chưa hoàn tất kết nối Zalo." }));
+      }
       const ginfo = await api.getGroupInfo([gid]);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       return res.end(JSON.stringify({
