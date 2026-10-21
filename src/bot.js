@@ -9,6 +9,7 @@ import { createModeration } from "./moderation.js";
 import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
 import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
+import { createBroadcaster } from "./broadcaster.js";
 
 // Chống crash đột tử do lỗi mạng hoặc unhandled rejection từ WebSocket / Zalo API
 process.on("unhandledRejection", (reason) => {
@@ -102,6 +103,8 @@ if (!listingGroups) {
       (config.blockImages !== undefined && typeof config.blockImages !== "boolean") ||
       (config.autoKick !== undefined && typeof config.autoKick !== "boolean") ||
       (config.maxViolations !== undefined && (!Number.isInteger(config.maxViolations) || config.maxViolations < 1 || config.maxViolations > 10)) ||
+      (config.broadcastOperatorIds !== undefined && !validIds(config.broadcastOperatorIds)) ||
+      (config.broadcast !== undefined && (typeof config.broadcast !== "object" || config.broadcast === null)) ||
       (config.blockZaloLinks !== undefined && typeof config.blockZaloLinks !== "boolean") ||
       (config.blockZaloGroupInvites !== undefined && typeof config.blockZaloGroupInvites !== "boolean") ||
       (config.reviewGroupId !== undefined && (typeof config.reviewGroupId !== "string" || !config.reviewGroupId.trim() ||
@@ -195,6 +198,8 @@ try {
   console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
 const moderation = createModeration({ api, config, state });
+const broadcaster = createBroadcaster({ api, config });
+console.log(`[RẢI LINK] Đã kích hoạt module Broadcaster; Nhóm mục tiêu sẵn có: ${broadcaster.store.data.targetGroups.length}`);
 const seenMessages = new Map();
 const messagesInFlight = new Set();
 function markSeen(messageKey) {
@@ -204,7 +209,11 @@ function markSeen(messageKey) {
 }
 
 async function processMessage(message, { source = "live" } = {}) {
+  if (source === "live" && await broadcaster.handleCommand(message)) return;
   if (source === "live" && await moderation.handleCommand(message)) return;
+  if (source === "live") {
+    broadcaster.inspectMessageForInvites(message);
+  }
   if (message.type !== ThreadType.Group) return;
   if (source === "history" && typeof message.data?.content === "string" &&
       /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;

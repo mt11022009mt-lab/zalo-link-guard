@@ -1,6 +1,42 @@
 # Bot dọn link trong nhóm Zalo
 
-## Bản 1.12.3: giữ bộ đếm vi phạm qua lần khởi động lại
+## Bản 1.14.0: Tự động tham gia nhóm & Rải link lác đác chống ban (Hỗ trợ 2 tài khoản điều hành)
+
+Bản cập nhật bổ sung tính năng rải link thông minh và tự động mở rộng nhóm mục tiêu:
+
+### 1. Lệnh xem UID Zalo (`/myid`)
+- Bất kỳ ai nhắn `/myid` (nhắn riêng bot hoặc nhắn trong nhóm bot quản lý), bot sẽ trả lời ngay UID Zalo của người đó. Dùng lệnh này để lấy UID của 2 tài khoản điều hành.
+
+### 2. Phân quyền chỉ 2 tài khoản được phép kích hoạt
+- Thêm `broadcastOperatorIds: ["UID_1", "UID_2"]` vào `config.json` hoặc biến môi trường `CONFIG_JSON`.
+- Chỉ 2 tài khoản này (hoặc người trong `trustedUserIds`) mới có quyền ra lệnh rải link hoặc can thiệp nhóm. Người lạ nhắn lệnh sẽ bị từ chối.
+
+### 3. Tự động đọc tin nhắn và tham gia nhóm (`autoJoinInvites`)
+- Bot liên tục quét luồng tin nhắn trong các box được quản lý.
+- Khi phát hiện có thành viên/spammer gửi link mời nhóm Zalo (`zalo.me/g/...`), bot vừa xóa tin chặn spam (nếu bật chặn), vừa đưa link đó vào hàng đợi **tự động tham gia nhóm**.
+- Khi tham gia thành công, nhóm mới sẽ tự động được thêm vào danh sách mục tiêu rải link (`targetGroups`)!
+
+### 4. Cơ chế rải link lác đác an toàn (Anti-Ban Engine)
+- **Spin-text thông minh:** Hỗ trợ cú pháp `{Chào anh em|Hello cả nhà|Hi mọi người}` và `{link}` để mỗi nhóm nhận một nội dung ngẫu nhiên khác nhau, tránh bị Zalo phát hiện spam nội dung trùng lặp.
+- **Giãn cách ngẫu nhiên (Pacing jitter):** Sau mỗi nhóm gửi thành công, bot nghỉ ngẫu nhiên từ 60 đến 180 giây (có thể chỉnh trong `config.json`) trước khi gửi nhóm tiếp theo.
+- **Giới hạn hàng ngày (Daily cap):** Giới hạn tối đa (mặc định 30 tin/ngày) để bảo vệ tài khoản bot không bị Zalo quét tần suất.
+
+### 5. Danh sách các lệnh điều khiển (Chỉ dành cho 2 tài khoản điều hành)
+- `/myid`: Xem UID Zalo của bản thân.
+- `/railink <URL> <mẫu tin nhắn spin>`: Khởi tạo chiến dịch rải link lác đác.
+  * Ví dụ: `/railink https://zalo.me/g/xyz {Chào anh em|Hello mọi người}, mời anh em ghé giao lưu tại {link} nhé!`
+- `/stoprai`: Dừng ngay chiến dịch rải link đang chạy.
+- `/trangthairai`: Báo cáo số nhóm mục tiêu, tiến độ gửi, số tin đã gửi trong ngày.
+- `/joinnhom <link>`: Ra lệnh cho bot chủ động tham gia một nhóm Zalo qua đường link mời.
+- `/themtarget <id_nhom>`: Thêm thủ công một ID nhóm vào danh sách rải link.
+
+---
+
+## Bản 1.13.0: Tự động kick sau 3 lần vi phạm (autoKick)
+
+Ở bản 1.13.0, thành viên thường vi phạm link quá 3 lần (`maxViolations: 3`) trong vòng 24 giờ sẽ được **bot tự động kick ngay lập tức khỏi nhóm** (nếu `autoKick: true`). Quản trị viên nhóm vẫn có thể xem danh sách bằng lệnh `/vipham` hoặc kick thủ công bằng `/kick @tag`.
+
+---
 
 Trên Render, bot **dừng lúc khởi động** nếu chưa đặt `DATABASE_URL` hoặc `STATE_DIR`. Trước đây bot tiếp tục chạy với file cục bộ và âm thầm mất lượt vi phạm khi Render khởi động lại. Hãy cấu hình một nơi lưu bền vững theo hướng dẫn bên dưới **trước khi triển khai bản này**. Chỉ đặt `STATE_DIR` là chưa đủ: đường dẫn đó phải là mount path của Render Persistent Disk. Nếu không có nơi lưu, bot dừng và sẽ không lọc tin cho đến khi cấu hình xong.
 

@@ -1,7 +1,7 @@
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|myid)(?:\s|$)/i;
 
 export function parseManualKickTarget(message) {
   const text = message.data?.content;
@@ -228,6 +228,11 @@ export function createModeration({ api, config, state, log = console }) {
     if (!matched) return false;
     const command = matched[1].toLowerCase();
     const senderId = String(message.data.uidFrom);
+
+    if (command === "myid") {
+      await reply(message, `UID Zalo của bạn là: ${senderId}`);
+      return true;
+    }
 
     if (command === "kick") {
       const groupId = String(message.threadId);

@@ -4,4 +4,6 @@ zalo-login-qr.png
 zalo-session.json
 moderation-state.json
 moderation-state.json.tmp
+broadcast-state.json
+broadcast-state.json.tmp
 *.log
