@@ -71,12 +71,7 @@ test("three zalo.me messages create a review case when autoKick is false; only a
   assert.equal(pending[0].displayName, "Người gửi");
   assert.equal(state.listViolations()[0].count, 3);
   assert.equal(kicked.length, 0);
-  assert.ok(sent.some((item) => item.id === ADMIN && item.text.includes("Người gửi: @Người gửi") && !item.text.includes(`Người gửi: ${MEMBER}`)));
-  const notice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("Đã lập hồ sơ"));
-  assert.ok(notice);
-  assert.deepEqual(notice.text.mentions, [{
-    pos: notice.text.msg.indexOf("@Người gửi"), uid: MEMBER, len: "@Người gửi".length,
-  }]);
+  assert.equal(sent.length, 0); // Không gửi tin cảnh báo hay DM tự động
 
   await moderation.handleCommand(approval("/vipham"));
   const list = sent.at(-1);
@@ -97,7 +92,7 @@ test("three zalo.me messages create a review case when autoKick is false; only a
   assert.equal(kicked.length, 1);
 });
 
-test("three strikes auto-kicks member when autoKick is enabled (default)", async (t) => {
+test("three strikes auto-kicks member silently without sending group notices or DMs", async (t) => {
   const { state, sent, kicked, moderation } = fixture(t);
   for (let id = 1; id <= 3; id++) {
     const message = linkMessage(id);
@@ -107,22 +102,7 @@ test("three strikes auto-kicks member when autoKick is enabled (default)", async
   }
   assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
   assert.equal(state.listViolations()[0].count, 3);
-  const kickNotice = sent.find((item) => item.id === GROUP && typeof item.text === "object" && item.text.msg.includes("đã bị kick khỏi nhóm"));
-  assert.ok(kickNotice);
-});
-
-test("silentModeration: true deletes and kicks silently without sending group notices", async (t) => {
-  const { state, sent, kicked, moderation } = fixture(t, { silentModeration: true });
-  for (let id = 1; id <= 3; id++) {
-    const message = linkMessage(id);
-    const result = checkMessage(message, { ...config, allowedDomains: ["zalo.me"] });
-    assert.ok(result);
-    await moderation.onViolation(message, result);
-  }
-  assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
-  assert.equal(state.listViolations()[0].count, 3);
-  const notices = sent.filter((item) => item.id === GROUP && typeof item.text === "object");
-  assert.equal(notices.length, 0);
+  assert.equal(sent.length, 0); // Im lặng 100%
 });
 
 test("/vipham shows 1–2 strikes to admins before a review case exists", async (t) => {
@@ -135,8 +115,8 @@ test("/vipham shows 1–2 strikes to admins before a review case exists", async 
     await moderation.onViolation(linkMessage(id), result);
     assert.equal(state.listViolations()[0].count, id);
     assert.equal(state.listPending().length, 0);
-    assert.equal(sent.at(-1).text.msg.includes(`${id}/3 lần`), true);
   }
+  assert.equal(sent.length, 0); // Chưa gõ lệnh thì không có tin cảnh báo tự động nào
   await moderation.handleCommand(approval("/vipham"));
   const groupList = sent.at(-1);
   assert.equal(groupList.id, GROUP);
@@ -170,7 +150,6 @@ test("/vipham via private message shows counts without disclosing other groups",
 test("configured violation window is shown and old strikes leave the list", async (t) => {
   const { sent, moderation } = fixture(t, { violationWindowHours: 12 });
   await moderation.onViolation(linkMessage(1), { links: [{ url: "https://spam.site/a" }] });
-  assert.equal(sent.at(-1).text.msg.includes("1/3 lần trong 12 giờ"), true);
   await moderation.handleCommand(approval("/vipham"));
   assert.equal(sent.at(-1).text.msg.includes("1/3 lần trong 12 giờ"), true);
 
@@ -328,7 +307,7 @@ test("/status and /help commands respond with bot information and guide", async 
   assert.match(sent.at(-1).text, /CÁC LỆNH QUẢN TRỊ VIÊN/);
 });
 
-test("reply falls back to DM when group send throws", async (t) => {
+test("reply does not fall back to DM when group send throws", async (t) => {
   const { api, sent, moderation } = fixture(t);
   api.sendMessage = async (text, id, type) => {
     if (type === 1) throw new Error("Không thể nhận tin nhắn từ bạn.");
@@ -338,10 +317,7 @@ test("reply falls back to DM when group send throws", async (t) => {
     type: 1, isSelf: false, threadId: GROUP,
     data: { uidFrom: ADMIN, content: "/status" },
   });
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].id, ADMIN);
-  assert.equal(sent[0].type, 0);
-  assert.match(sent[0].text, /ZALO LINK GUARD BOT/);
+  assert.equal(sent.length, 0); // Không gửi DM riêng cho thành viên khi lỗi
 });
 
 test("/tatbot and /batbot toggle group moderation status", async (t) => {
