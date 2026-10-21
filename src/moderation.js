@@ -447,7 +447,7 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
-    if (["ai", "ask", "chat", "deepseek"].includes(command)) {
+    if (["ai", "ask", "chat", "gemini", "deepseek"].includes(command)) {
       const prompt = text.replace(COMMAND_RE, "").trim();
       if (!prompt) {
         await reply(message, "💡 Cú pháp: /ai <câu hỏi của bạn>\nVí dụ: /ai giải thích hiện tượng nhật thực");
@@ -475,13 +475,14 @@ export function createModeration({ api, config, state, aiService, log = console 
       const groupLine = isGroup
         ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}`
         : "";
-      const aiStatus = aiService?.isConfigured?.() ? "🟢 ĐÃ KÍCH HOẠT (DeepSeek)" : "⚪ Chưa cấu hình DEEPSEEK_API_KEY";
-      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.1.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Trợ lý AI DeepSeek: ${aiStatus}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (100% Silent)" : "TẮT"}`);
+      const aiProvider = aiService?.getProviderName?.() || "Google Gemini Flash / DeepSeek";
+      const aiStatus = aiService?.isConfigured?.() ? `🟢 ĐÃ KÍCH HOẠT (${aiProvider})` : "⚪ Chưa cấu hình";
+      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.2.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Trợ lý AI: ${aiStatus}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (100% Silent)" : "TẮT"}`);
       return true;
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /ai <câu hỏi> : Trò chuyện siêu tốc với AI DeepSeek (hoặc tag @bot trong nhóm).\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI (Google Gemini Flash / DeepSeek). Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

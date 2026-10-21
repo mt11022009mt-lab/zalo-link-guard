@@ -266,11 +266,12 @@ try {
   console.warn("[KIỂM TRA NHÓM] Không xác minh được nhóm/quyền QTV lúc khởi động:", error.message);
 }
 const aiService = new AIService({
-  apiKey: process.env.DEEPSEEK_API_KEY || config.deepseekApiKey,
-  model: process.env.DEEPSEEK_MODEL || config.deepseekModel || "deepseek-chat",
-  baseUrl: process.env.DEEPSEEK_BASE_URL || config.deepseekBaseUrl || "https://api.deepseek.com",
+  geminiApiKey: process.env.GEMINI_API_KEY || config.geminiApiKey,
+  deepseekApiKey: process.env.DEEPSEEK_API_KEY || config.deepseekApiKey,
+  deepseekModel: process.env.DEEPSEEK_MODEL || config.deepseekModel || "deepseek-chat",
+  deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || config.deepseekBaseUrl || "https://api.deepseek.com",
 });
-console.log(`[TRỢ LÝ AI] DeepSeek API: ${aiService.isConfigured() ? "Đã cấu hình" : "Chưa gắn DEEPSEEK_API_KEY"} (model=${aiService.model})`);
+console.log(`[TRỢ LÝ AI] Động cơ AI: ${aiService.getProviderName()} (Sẵn sàng phục vụ nhóm)`);
 
 const moderation = createModeration({ api, config, state, aiService });
 
