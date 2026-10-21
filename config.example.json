@@ -5,6 +5,7 @@
   "blockZaloLinks": true,
   "blockZaloGroupInvites": true,
   "blockImages": true,
+  "silentModeration": true,
   "maxViolations": 3,
   "autoKick": true,
   "violationWindowHours": 24,

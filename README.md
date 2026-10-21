@@ -1,5 +1,14 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.16.4: Chế độ kiểm duyệt âm thầm (Silent Moderation) — Xóa link, xóa ảnh & Kick thành viên không gửi thông báo ra nhóm
+
+Bản cập nhật giúp box chat luôn sạch sẽ tuyệt đối và bảo vệ bot không bị Zalo giới hạn tần suất gửi tin:
+- **Xóa tin & Kick 100% âm thầm (`silentModeration: true`):** Khi thành viên gửi link hoặc ảnh vi phạm, bot vẫn lập tức thu hồi/xóa tin nhắn và tính điểm vi phạm; khi đủ số lần (mặc định 3 lần) bot tự động kick thành viên ra khỏi nhóm. Tuy nhiên, bot **hoàn toàn không gửi bất kỳ tin nhắn cảnh báo hay thông báo kick nào vào box chat** (`⚠️ @user đã gửi link...`, `⛔ @user đã bị kick...`).
+- **Chống giới hạn tin nhắn Zalo (Anti-Rate Limit):** Giảm thiểu tối đa lưu lượng tin nhắn bot phát ra trong nhóm, tránh việc nick bot bị Zalo đánh dấu spam hoặc báo *"Đạt giới hạn rồi"*.
+- **Giữ nguyên phản hồi lệnh điều hành:** Các lệnh quản trị chủ động (`/vipham`, `/kick @thành_viên`, `/myid`, `/railink`, v.v.) vẫn hoạt động bình thường khi QTV/điều hành yêu cầu.
+
+---
+
 ## Bản 1.16.3: Tự động kích hoạt lọc link & ảnh cho mọi nhóm Bot làm Phó nhóm (Admin)
 
 Bản cập nhật thông minh giải quyết triệt để vấn đề bot không xóa link/ảnh ở nhóm mới:

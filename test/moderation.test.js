@@ -107,6 +107,20 @@ test("three strikes auto-kicks member when autoKick is enabled (default)", async
   assert.ok(kickNotice);
 });
 
+test("silentModeration: true deletes and kicks silently without sending group notices", async (t) => {
+  const { state, sent, kicked, moderation } = fixture(t, { silentModeration: true });
+  for (let id = 1; id <= 3; id++) {
+    const message = linkMessage(id);
+    const result = checkMessage(message, { ...config, allowedDomains: ["zalo.me"] });
+    assert.ok(result);
+    await moderation.onViolation(message, result);
+  }
+  assert.deepEqual(kicked, [{ id: MEMBER, groupId: GROUP }]);
+  assert.equal(state.listViolations()[0].count, 3);
+  const notices = sent.filter((item) => item.id === GROUP && typeof item.text === "object");
+  assert.equal(notices.length, 0);
+});
+
 test("/vipham shows 1–2 strikes to admins before a review case exists", async (t) => {
   const { state, sent, kicked, moderation } = fixture(t);
   const result = { links: [

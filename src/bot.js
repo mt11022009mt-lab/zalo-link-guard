@@ -162,6 +162,7 @@ if (!listingGroups) {
   if (!validIds(config.groupIds) || config.groupIds.length === 0 || config.groupIds.some((id) => id === "THAY_BANG_ID_NHOM") ||
       !validIds(config.trustedUserIds) || !validIds(config.allowedDomains) || typeof config.dryRun !== "boolean" ||
       (config.blockImages !== undefined && typeof config.blockImages !== "boolean") ||
+      (config.silentModeration !== undefined && typeof config.silentModeration !== "boolean") ||
       (config.autoKick !== undefined && typeof config.autoKick !== "boolean") ||
       (config.maxViolations !== undefined && (!Number.isInteger(config.maxViolations) || config.maxViolations < 1 || config.maxViolations > 10)) ||
       (config.broadcastOperatorIds !== undefined && !validIds(config.broadcastOperatorIds)) ||
@@ -176,6 +177,9 @@ if (!listingGroups) {
         (!Number.isInteger(config.historySweepSeconds) || config.historySweepSeconds < 30 || config.historySweepSeconds > 300)))) {
     console.error("Cấu hình không hợp lệ. Kiểm tra groupIds, trustedUserIds, allowedDomains, blockImages, reviewGroupId, violationWindowHours và dryRun trong config.json.");
     process.exit(1);
+  }
+  if (config.silentModeration === undefined) {
+    config.silentModeration = true;
   }
 }
 
