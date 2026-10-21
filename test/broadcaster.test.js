@@ -324,12 +324,12 @@ test("auto leaves locked group upon join when bot is not admin", async (t) => {
   assert.equal(leftGroups[0].silent, true);
   assert.ok(!broadcaster.store.data.targetGroups.includes("group-locked"));
 
-  // Operator must be notified
-  const notice = sent.find((s) => s.threadId === OPERATOR_1 && s.text.includes("TỰ ĐỘNG RỜI NHÓM KHÓA CHAT"));
-  assert.ok(notice);
+  // Operator is NOT spammed: no messages sent for locked groups or leaves
+  const notice = sent.find((s) => s.text.includes("TỰ ĐỘNG RỜI NHÓM") || s.text.includes("BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI"));
+  assert.equal(notice, undefined);
 });
 
-test("auto leaves group when broadcast send fails due to permission denied", async (t) => {
+test("auto leaves group when broadcast send fails due to permission denied without spamming operator", async (t) => {
   const { api, broadcaster, sent, leftGroups } = createFixture(t);
 
   // Operator starts campaign
@@ -357,7 +357,27 @@ test("auto leaves group when broadcast send fails due to permission denied", asy
   assert.equal(leftGroups[0].gid, "group-1");
   assert.ok(!broadcaster.store.data.targetGroups.includes("group-1"));
 
-  // Notice sent to operator
+  // Silent departure: operator is not spammed with leave notifications
   const notice = sent.find((s) => s.threadId === OPERATOR_1 && s.text.includes("TỰ ĐỘNG RỜI NHÓM"));
-  assert.ok(notice);
+  assert.equal(notice, undefined);
+});
+
+test("pending approval (code 240) does not notify operator", async (t) => {
+  const { api, broadcaster, sent, advanceTime } = createFixture(t);
+  api.joinGroupLink = async () => {
+    const err = new Error("Nhóm cần duyệt thành viên");
+    err.code = 240;
+    throw err;
+  };
+
+  broadcaster.queueGroupInvite("https://zalo.me/g/pendingapproval123");
+  advanceTime(35);
+  await broadcaster.stepJoinWorker();
+
+  // Link is remembered so bot doesn't retry endlessly
+  assert.ok(broadcaster.store.data.joinedLinks.includes("https://zalo.me/g/pendingapproval123"));
+
+  // Absolutely NO notification sent to operators
+  const notice = sent.find((s) => s.text.includes("CHỜ DUYỆT") || s.text.includes("BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI"));
+  assert.equal(notice, undefined);
 });

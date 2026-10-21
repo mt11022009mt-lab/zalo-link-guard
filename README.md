@@ -1,5 +1,15 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.16.1: Tối ưu thông báo chống spam — Chỉ báo khi vào thành công nhóm mới
+
+Bản tinh chỉnh thông minh theo yêu cầu vận hành thực tế:
+- **Chỉ báo khi vào thành công:** Bot chỉ gửi tin nhắn riêng cho 2 tài khoản điều hành khi **thực sự tham gia thành công** một nhóm mới và nhóm đó **cho phép nhắn tin** (`🎉 [BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI]`).
+- **Tắt thông báo chờ duyệt:** Khi gặp nhóm bật chế độ phê duyệt (mã 240), bot âm thầm lưu link vào danh sách để không spam và chờ QTV duyệt trong nền, **không gửi tin nhắn làm phiền điều hành**.
+- **Tự out nhóm khóa chat 100% im lặng:** Khi phát hiện nhóm bị khóa chat (lúc vừa vào nhóm hoặc lúc gửi tin rải link bị chặn quyền), bot tự động rời nhóm và loại khỏi danh sách mục tiêu trong im lặng, **không gửi tin nhắn báo rời nhóm**.
+- **Hộp thư luôn gọn gàng:** Người điều hành chỉ nhận đúng thông báo khi có địa bàn mới đã sẵn sàng rải link.
+
+---
+
 ## Bản 1.16.0: Tự động rời nhóm bị Khóa Chat (Không có quyền nhắn tin) & Lệnh `/locnhom`
 
 Bản nâng cấp giúp tài khoản bot luôn sạch sẽ, chỉ giữ lại các nhóm có thể hoạt động:

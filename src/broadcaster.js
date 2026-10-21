@@ -235,10 +235,6 @@ export function createBroadcaster({
                   store.data.campaign.items = store.data.campaign.items.filter((it) => it.groupId !== newlyAddedGid);
                 }
                 store.save();
-
-                await notifyOperators(
-                  `🚪 [TỰ ĐỘNG RỜI NHÓM KHÓA CHAT]\n- Tên nhóm: ${newlyAddedName || newlyAddedGid}\n- ID: ${newlyAddedGid}\n- Link: ${link}\n- Lý do: Nhóm này chỉ cho phép Trưởng/Phó nhóm nhắn tin. Bot đã tự động rời nhóm ngay lập tức.`
-                );
                 return;
               }
             } catch (e) {
@@ -273,9 +269,7 @@ export function createBroadcaster({
       } else if (isApprovalRequired) {
         store.data.joinedLinks.push(link);
         store.save();
-        await notifyOperators(
-          `⏳ [CHỜ DUYỆT VÀO NHÓM]\n- Link: ${link}\n- Nhóm này bật chế độ phê duyệt. Bot đã gửi yêu cầu tham gia và đang đợi QTV duyệt.`
-        );
+        log.info(`[CHỜ DUYỆT] Nhóm ${link} cần phê duyệt. Đang đợi QTV duyệt (không spam tin nhắn điều hành).`);
       }
     } finally {
       isJoining = false;
@@ -353,9 +347,6 @@ export function createBroadcaster({
           } catch {}
         }
         store.data.targetGroups = store.data.targetGroups.filter((g) => g !== item.groupId);
-        await notifyOperators(
-          `🚪 [TỰ ĐỘNG RỜI NHÓM]\n- ID nhóm: ${item.groupId}\n- Lý do: Bot không có quyền gửi tin nhắn tại nhóm này (Bị khóa chat).\n- Bot đã tự out nhóm và loại bỏ khỏi danh sách rải link.`
-        );
       }
     } finally {
       campaign.nextSendAt = clock() + nextIntervalSec * 1000;
