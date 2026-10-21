@@ -149,7 +149,17 @@ export function createModeration({ api, config, state, log = console }) {
     try {
       await api.sendMessage(text, message.threadId, message.type);
     } catch (error) {
-      log.error("Không gửi được phản hồi lệnh:", error);
+      log.error("Không gửi được phản hồi lệnh vào nhóm:", error.message);
+      const senderId = String(message.data?.uidFrom || "");
+      if (message.type === ThreadType.Group && senderId && senderId !== String(message.threadId)) {
+        try {
+          const fallbackText = typeof text === "object" ? text : `[Phản hồi lệnh từ nhóm]:\n${text}`;
+          await api.sendMessage(fallbackText, senderId, ThreadType.User);
+          log.info(`[PHẢN HỒI RIÊNG] Đã gửi riêng kết quả lệnh cho người dùng ${senderId}`);
+        } catch (dmErr) {
+          log.error("Không gửi được phản hồi riêng cho người dùng:", dmErr.message);
+        }
+      }
     }
   }
 

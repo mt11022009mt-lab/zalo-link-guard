@@ -327,3 +327,19 @@ test("/status and /help commands respond with bot information and guide", async 
   await moderation.handleCommand(approval("/help"));
   assert.match(sent.at(-1).text, /CÁC LỆNH QUẢN TRỊ VIÊN/);
 });
+
+test("reply falls back to DM when group send throws", async (t) => {
+  const { api, sent, moderation } = fixture(t);
+  api.sendMessage = async (text, id, type) => {
+    if (type === 1) throw new Error("Không thể nhận tin nhắn từ bạn.");
+    sent.push({ text, id, type });
+  };
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/status" },
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].id, ADMIN);
+  assert.equal(sent[0].type, 0);
+  assert.match(sent[0].text, /ZALO LINK GUARD BOT/);
+});
