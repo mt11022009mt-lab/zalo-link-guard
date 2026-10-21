@@ -349,7 +349,7 @@ test("/tatbot and /batbot toggle group moderation status", async (t) => {
 });
 
 test("/ai command provides syntax guide and config guidance", async (t) => {
-  const aiService = new AIService();
+  const aiService = new AIService({ apiKey: "" });
   const { sent, moderation } = fixture(t, { aiService });
 
   // Empty prompt
