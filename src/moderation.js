@@ -55,7 +55,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|botinfo|status|help|myid)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid)(?:\s|$)/i;
 
 export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
@@ -412,13 +412,79 @@ export function createModeration({ api, config, state, log = console }) {
       return true;
     }
 
+    if (["tatbot", "offbot", "pause"].includes(command)) {
+      let targetGroupId = String(message.threadId);
+      const isGroup = message.type === ThreadType.Group;
+      if (!isGroup) {
+        const parts = text.split(/\s+/);
+        if (parts[1] && /^\d+$/.test(parts[1].trim())) {
+          targetGroupId = parts[1].trim();
+        } else if (config.groupIds.length === 1) {
+          targetGroupId = config.groupIds[0];
+        } else {
+          await reply(message, "Cú pháp trong tin nhắn riêng: /tatbot <Mã_Nhóm>");
+          return true;
+        }
+      }
+
+      try {
+        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        if (!isOperator) {
+          const info = await groupInfo(targetGroupId);
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ QTV nhóm mới có quyền tắt bot.");
+        }
+        state.disableGroup(targetGroupId);
+        await state.flush();
+        await reply(message, `⏸️ Đã TẠM DỪNG bảo vệ nhóm ${targetGroupId}.\nBot sẽ không xóa ảnh, link hay kick thành viên cho đến khi bật lại bằng lệnh /batbot.`);
+      } catch (error) {
+        await reply(message, `Không tắt được bot: ${error.message}`);
+      }
+      return true;
+    }
+
+    if (["batbot", "onbot", "resume"].includes(command)) {
+      let targetGroupId = String(message.threadId);
+      const isGroup = message.type === ThreadType.Group;
+      if (!isGroup) {
+        const parts = text.split(/\s+/);
+        if (parts[1] && /^\d+$/.test(parts[1].trim())) {
+          targetGroupId = parts[1].trim();
+        } else if (config.groupIds.length === 1) {
+          targetGroupId = config.groupIds[0];
+        } else {
+          await reply(message, "Cú pháp trong tin nhắn riêng: /batbot <Mã_Nhóm>");
+          return true;
+        }
+      }
+
+      try {
+        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        if (!isOperator) {
+          const info = await groupInfo(targetGroupId);
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ QTV nhóm mới có quyền bật bot.");
+        }
+        state.enableGroup(targetGroupId);
+        await state.flush();
+        await reply(message, `▶️ Đã KÍCH HOẠT LẠI bảo vệ nhóm ${targetGroupId}.\nBot sẽ tiếp tục xóa link, chặn ảnh spam và đếm vi phạm.`);
+      } catch (error) {
+        await reply(message, `Không bật được bot: ${error.message}`);
+      }
+      return true;
+    }
+
     if (command === "botinfo" || command === "status") {
-      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.0.0)\n- Trạng thái: Đang hoạt động\n- Nhóm đang bảo vệ: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (Không spam tin cảnh báo)" : "TẮT"}`);
+      const isGroup = message.type === ThreadType.Group;
+      const targetGid = String(message.threadId);
+      const isPaused = isGroup && Boolean(state?.isGroupDisabled?.(targetGid));
+      const groupLine = isGroup
+        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}`
+        : "";
+      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.0.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (Không spam tin cảnh báo)" : "TẮT"}`);
       return true;
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN:\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN:\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

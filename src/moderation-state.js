@@ -12,11 +12,34 @@ export class ModerationState {
     this.pendingSave = Promise.resolve();
     this.data = initialData ?? (existsSync(filePath)
       ? JSON.parse(readFileSync(filePath, "utf8"))
-      : { version: 1, incidents: [], cases: [], manualKicks: [] });
+      : { version: 1, incidents: [], cases: [], manualKicks: [], disabledGroups: [] });
     if (this.data.version !== 1 || !Array.isArray(this.data.incidents) ||
         !Array.isArray(this.data.cases) || !Array.isArray(this.data.manualKicks)) {
       throw new Error("File moderation-state.json không hợp lệ; bot dừng để tránh xử lý sai.");
     }
+    if (!Array.isArray(this.data.disabledGroups)) {
+      this.data.disabledGroups = [];
+    }
+  }
+
+  isGroupDisabled(groupId) {
+    return this.data.disabledGroups.includes(String(groupId));
+  }
+
+  disableGroup(groupId) {
+    const gid = String(groupId);
+    if (!this.data.disabledGroups.includes(gid)) {
+      this.data.disabledGroups.push(gid);
+      this.save();
+    }
+    return true;
+  }
+
+  enableGroup(groupId) {
+    const gid = String(groupId);
+    this.data.disabledGroups = this.data.disabledGroups.filter((id) => id !== gid);
+    this.save();
+    return true;
   }
 
   save() {

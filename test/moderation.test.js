@@ -343,3 +343,30 @@ test("reply falls back to DM when group send throws", async (t) => {
   assert.equal(sent[0].type, 0);
   assert.match(sent[0].text, /ZALO LINK GUARD BOT/);
 });
+
+test("/tatbot and /batbot toggle group moderation status", async (t) => {
+  const { state, sent, moderation } = fixture(t);
+
+  // Ordinary member cannot toggle
+  await moderation.handleCommand(approval("/tatbot", MEMBER));
+  assert.equal(state.isGroupDisabled(GROUP), false);
+  assert.match(sent.at(-1).text, /Chỉ QTV nhóm mới có quyền tắt bot/);
+
+  // Admin toggles OFF
+  await moderation.handleCommand(approval("/tatbot", ADMIN));
+  assert.equal(state.isGroupDisabled(GROUP), true);
+  assert.match(sent.at(-1).text, /Đã TẠM DỪNG bảo vệ/);
+
+  // Status shows paused
+  await moderation.handleCommand(approval("/status", ADMIN));
+  assert.match(sent.at(-1).text, /ĐANG TẮT/);
+
+  // Admin toggles ON
+  await moderation.handleCommand(approval("/batbot", ADMIN));
+  assert.equal(state.isGroupDisabled(GROUP), false);
+  assert.match(sent.at(-1).text, /Đã KÍCH HOẠT LẠI bảo vệ/);
+
+  // Status shows active
+  await moderation.handleCommand(approval("/status", ADMIN));
+  assert.match(sent.at(-1).text, /ĐANG BẬT/);
+});
