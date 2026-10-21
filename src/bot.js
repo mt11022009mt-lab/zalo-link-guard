@@ -19,6 +19,20 @@ process.on("uncaughtException", (error) => {
   console.error("[CHỐNG CRASH] uncaughtException:", error);
 });
 
+// Bộ đệm lưu trữ log gần nhất để kiểm tra trực tiếp qua web /debug
+const logBuffer = [];
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+function pushLog(level, ...args) {
+  const text = args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  logBuffer.push({ time: new Date().toISOString(), level, text });
+  if (logBuffer.length > 100) logBuffer.shift();
+}
+console.log = (...args) => { pushLog("INFO", ...args); originalLog(...args); };
+console.warn = (...args) => { pushLog("WARN", ...args); originalWarn(...args); };
+console.error = (...args) => { pushLog("ERROR", ...args); originalError(...args); };
+
 const configPath = resolve(process.cwd(), "config.json");
 const { version } = createRequire(import.meta.url)("../package.json");
 console.log(`[BOT] phiên_bản=${version}`);
@@ -27,6 +41,7 @@ const debug = process.argv.includes("--debug");
 let config;
 let botStatus = "đang_khởi_động";
 let botError = null;
+let lastMessageTime = null;
 
 // Khởi chạy HTTP Server để Render không bị timeout port scan và UptimeRobot ping 24/7
 const PORT = Number(process.env.PORT) || 3000;
@@ -42,6 +57,35 @@ const server = createServer((req, res) => {
       groups: config?.groupIds?.length ?? 0,
       timestamp: new Date().toISOString(),
     }));
+  }
+
+  if (req.url === "/debug" || req.url === "/status") {
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    return res.end(JSON.stringify({
+      version,
+      uptime: Math.floor(process.uptime()),
+      botStatus,
+      botError,
+      lastMessageAt: lastMessageTime,
+      config: {
+        groupIds: config?.groupIds,
+        trustedUserIds: config?.trustedUserIds,
+        broadcastOperatorIds: config?.broadcastOperatorIds,
+        allowedDomains: config?.allowedDomains,
+        blockImages: config?.blockImages,
+        blockZaloLinks: config?.blockZaloLinks,
+        blockZaloGroupInvites: config?.blockZaloGroupInvites,
+        dryRun: config?.dryRun,
+        autoKick: config?.autoKick,
+      },
+      stats: {
+        seenCount: seenMessages.size,
+        messagesInFlight: messagesInFlight.size,
+        targetGroupsCount: broadcaster?.store?.data?.targetGroups?.length ?? 0,
+        joinQueueCount: broadcaster?.joinQueue?.length ?? 0,
+      },
+      recentLogs: logBuffer.slice(-50),
+    }, null, 2));
   }
 
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -220,6 +264,7 @@ function markSeen(messageKey) {
 }
 
 async function processMessage(message, { source = "live" } = {}) {
+  lastMessageTime = new Date().toISOString();
   if (source === "live" && await broadcaster.handleCommand(message)) return;
   if (source === "live" && await moderation.handleCommand(message)) return;
   if (source === "live") {
@@ -230,17 +275,22 @@ async function processMessage(message, { source = "live" } = {}) {
       /^\s*\/(?:kick|duyetkick|tuchoikick|vipham)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
-  if (debug) {
-    const domains = extractMessageLinks(message).map((link) => link.hostname);
-    const content = message.data?.content;
-    const keys = content && typeof content === "object" ? Object.keys(content).slice(0, 12).join(",") : "-";
-    console.log(`[DEBUG] nguồn=${source} nhóm=${message.threadId} người_gửi=${message.data?.uidFrom ?? "?"} tin=${message.data?.msgId ?? "?"} cliMsgId=${message.data?.cliMsgId ? "có" : "thiếu"} loại=${message.data?.msgType ?? "?"} ảnh=${isImageMessage(message)} nội_dung=${typeof content} trường=${keys} link=${domains.join(",") || "không_thấy"} trong_cấu_hình=${config.groupIds.includes(String(message.threadId))} tin_cậy=${config.trustedUserIds.includes(String(message.data?.uidFrom))} dryRun=${config.dryRun}`);
+
+  const isImage = isImageMessage(message);
+  const links = extractMessageLinks(message);
+  if (isImage || links.length > 0) {
+    const isTargetGroup = config.groupIds.includes(String(message.threadId));
+    const isTrusted = config.trustedUserIds.includes(String(message.data?.uidFrom));
+    if (!isTargetGroup) {
+      console.log(`[LỌC TIN] Nhóm ${message.threadId} có ${isImage ? "ảnh" : ""}${links.length ? "link" : ""} nhưng KHÔNG nằm trong danh sách groupIds được bảo vệ (${config.groupIds.join(",")}) -> BỎ QUA.`);
+    } else if (isTrusted) {
+      console.log(`[LỌC TIN] Nhóm ${message.threadId}: Người gửi ${message.data?.uidFrom} thuộc danh sách tin cậy (trustedUserIds) -> BỎ QUA.`);
+    }
   }
+
   const result = checkMessage(message, config);
-  if (!result) {
-    if (debug) console.log("[DEBUG] quyết_định=bỏ_qua (không có ảnh/link bị cấm hoặc người gửi được miễn)");
-    return;
-  }
+  if (!result) return;
+
   const { msgId, cliMsgId, uidFrom } = message.data;
   if (!msgId || !cliMsgId || !uidFrom) {
     console.warn(`[THIẾU ID] nguồn=${source} nhóm=${message.threadId} loại=${message.data?.msgType ?? "?"} msgId=${msgId ? "có" : "thiếu"} cliMsgId=${cliMsgId ? "có" : "thiếu"} uidFrom=${uidFrom ? "có" : "thiếu"}; bỏ qua để tránh xóa nhầm.`);
@@ -259,14 +309,14 @@ async function processMessage(message, { source = "live" } = {}) {
       return;
     }
     if (isGroupAdmin(group, uidFrom)) {
-      if (debug) console.log(`[DEBUG] quyết_định=bỏ_qua_QTV nhóm=${message.threadId} người_gửi=${uidFrom}`);
+      console.log(`[LỌC TIN] Nhóm ${message.threadId}: Người gửi ${uidFrom} là Trưởng/Phó nhóm -> BỎ QUA.`);
       markSeen(messageKey);
       return;
     }
-    if (debug) console.log(`[DEBUG] quyết_định=xóa lý_do=${reason}`);
     if (config.dryRun) {
       console.log(`[XEM TRƯỚC] Sẽ xóa ${details}`);
     } else {
+      console.log(`[ĐANG TIẾN HÀNH XÓA] ${details}`);
       let response;
       try {
         response = await api.deleteMessage({
@@ -275,11 +325,11 @@ async function processMessage(message, { source = "live" } = {}) {
           data: { msgId, cliMsgId, uidFrom },
         }, false);
       } catch (error) {
-        console.error(`[LỖI XÓA] ${details}`, error);
+        console.error(`[LỖI XÓA] ${details}:`, error.message);
         if (result.links.length) await moderation.onViolation(message, result);
         return;
       }
-      console.log(`[API XÓA TRẢ VỀ] ${details} trạng_thái=${response?.status ?? "không_rõ"}; kiểm tra tin trên Zalo nếu vẫn còn.`);
+      console.log(`[ĐÃ XÓA XONG] ${details} trạng thái API: ${JSON.stringify(response)}`);
     }
     markSeen(messageKey);
     if (result.links.length) await moderation.onViolation(message, result);
