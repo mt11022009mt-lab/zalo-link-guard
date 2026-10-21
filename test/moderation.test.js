@@ -375,6 +375,24 @@ test("/ai command answers questions and enforces cooldown", async (t) => {
   assert.match(sent.at(-1).text, /Bạn hỏi nhanh quá/);
 });
 
+test("AIService handles insufficient balance (402) promptly", async (t) => {
+  const service = new AIService({ apiKey: "sk-test-key", baseUrl: "http://127.0.0.1:9" });
+  // Mock fetch failure
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 402,
+    json: async () => ({ error: { message: "Insufficient Balance" } }),
+  });
+
+  try {
+    const res = await service.ask("test query");
+    assert.match(res, /hết số dư \(\$0 - Insufficient Balance\)/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("tagging @Bot in group triggers AI assistant", async (t) => {
   const aiService = new AIService({ apiKey: "sk-test-key-123456" });
   aiService.ask = async (prompt) => `Trợ lý AI trả lời: ${prompt}`;
