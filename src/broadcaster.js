@@ -145,6 +145,18 @@ export function createBroadcaster({
 
   const isOperator = (userId) => getOperatorIds().has(String(userId));
 
+  async function notifyOperators(text) {
+    if (!text || typeof api?.sendMessage !== "function") return;
+    const operatorIds = Array.from(getOperatorIds());
+    for (const opId of operatorIds) {
+      try {
+        await api.sendMessage(text, opId, ThreadType.User);
+      } catch (err) {
+        log.warn(`[THÔNG BÁO OPERATOR] Không gửi được tin cho ${opId}:`, err.message);
+      }
+    }
+  }
+
   const joinQueue = [];
   let isJoining = false;
   let lastJoinAt = 0;
@@ -176,6 +188,8 @@ export function createBroadcaster({
       }
       store.data.joinedLinks.push(link);
 
+      let newlyAddedGid = null;
+      let newlyAddedName = "";
       try {
         if (typeof api.getAllGroups === "function") {
           const groups = await api.getAllGroups();
@@ -183,6 +197,7 @@ export function createBroadcaster({
           for (const gid of ids) {
             if (!store.data.targetGroups.includes(gid)) {
               store.data.targetGroups.push(gid);
+              newlyAddedGid = gid;
               log.info(`[VÀO NHÓM THÀNH CÔNG] Đã thêm nhóm mới ${gid} vào danh sách mục tiêu rải link!`);
               if (store.data.campaign && store.data.campaign.status === "running") {
                 const inCampaign = store.data.campaign.items.some((it) => it.groupId === gid);
@@ -193,16 +208,43 @@ export function createBroadcaster({
               }
             }
           }
+          if (newlyAddedGid && typeof api.getGroupInfo === "function") {
+            try {
+              const info = await api.getGroupInfo([newlyAddedGid]);
+              newlyAddedName = info?.gridInfoMap?.[newlyAddedGid]?.name || "";
+            } catch {}
+          }
         }
       } catch (e) {
         log.warn("[VÀO NHÓM] Không cập nhật được danh sách nhóm sau khi join:", e.message);
       }
       store.save();
+
+      // BÁO CÁO NGAY CHO TÀI KHOẢN ĐIỀU HÀNH
+      const notifyLines = [
+        "🎉 [BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI]",
+        newlyAddedName ? `- Tên nhóm: ${newlyAddedName}` : null,
+        newlyAddedGid ? `- ID nhóm: ${newlyAddedGid}` : null,
+        `- Link nhóm: ${link}`,
+        `- Đã nạp vào danh sách mục tiêu rải link! (Tổng: ${store.data.targetGroups.length} nhóm)`,
+      ].filter(Boolean);
+      await notifyOperators(notifyLines.join("\n"));
+
     } catch (err) {
       log.warn(`[VÀO NHÓM THẤT BẠI] ${link}: ${err.message}`);
-      if (err.code === 178 || String(err.message).includes("178")) {
+      const errStr = String(err.message || "");
+      const isAlreadyMember = err.code === 178 || errStr.includes("178");
+      const isApprovalRequired = err.code === 240 || errStr.includes("240");
+
+      if (isAlreadyMember) {
         store.data.joinedLinks.push(link);
         store.save();
+      } else if (isApprovalRequired) {
+        store.data.joinedLinks.push(link);
+        store.save();
+        await notifyOperators(
+          `⏳ [CHỜ DUYỆT VÀO NHÓM]\n- Link: ${link}\n- Nhóm này bật chế độ phê duyệt. Bot đã gửi yêu cầu tham gia và đang đợi QTV duyệt.`
+        );
       }
     } finally {
       isJoining = false;
@@ -220,6 +262,10 @@ export function createBroadcaster({
       campaign.status = "done";
       log.info(`[RẢI LINK] Hoàn tất chiến dịch #${campaign.id}! Tất cả các nhóm đã được gửi.`);
       store.save();
+      const sentCount = campaign.items.filter((it) => it.status === "sent" || it.status === "simulated").length;
+      await notifyOperators(
+        `🏁 [HOÀN TẤT CHIẾN DỊCH RẢI LINK]\n- Chiến dịch #${campaign.id} đã hoàn tất!\n- Đã gửi thành công: ${sentCount} nhóm\n- Số tin hôm nay: ${store.data.dailyCounter.count}/${config.broadcast?.maxSendsPerDay ?? 30}`
+      );
       return;
     }
 

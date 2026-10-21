@@ -256,3 +256,37 @@ test("scanAllGroupsForInvites reads all existing groups and queues invites found
   const finishMsg = sent.find((s) => s.text.includes("Đã quét xong"));
   assert.ok(finishMsg);
 });
+
+test("notifies operators when a group is joined and catches obfuscated invite links", async (t) => {
+  const { api, broadcaster, sent, advanceTime } = createFixture(t);
+  api.getAllGroups = async () => ({
+    gridVerMap: { "group-1": "1", "group-2": "1", "group-joined-auto": "1" },
+  });
+  api.getGroupInfo = async () => ({
+    gridInfoMap: { "group-joined-auto": { name: "Giao Lưu Tricker 2026" } },
+  });
+
+  // Obfuscated invite link: "zalo . me / g / testobf123"
+  broadcaster.inspectMessageForInvites({
+    isSelf: false,
+    threadId: "group-1",
+    type: ThreadType.Group,
+    data: {
+      uidFrom: "spammer-obf",
+      content: "Anh em vào nhóm này nha zalo . me / g / testobf123 bao vui!",
+    },
+  });
+
+  assert.equal(broadcaster.joinQueue.length, 1);
+  assert.equal(broadcaster.joinQueue[0], "https://zalo.me/g/testobf123");
+
+  // Worker runs and joins
+  advanceTime(35);
+  await broadcaster.stepJoinWorker();
+
+  // Operator 1 and 2 must receive notification
+  const op1Notice = sent.find((s) => s.threadId === OPERATOR_1 && s.text.includes("BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI"));
+  assert.ok(op1Notice);
+  assert.ok(op1Notice.text.includes("Giao Lưu Tricker 2026"));
+  assert.ok(op1Notice.text.includes("testobf123"));
+});

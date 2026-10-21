@@ -11,6 +11,8 @@ export function extractLinks(content) {
     .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .replace(/[\u3002\uFF0E\uFF61]/g, ".")
     .replace(/hxxps?:\/\//gi, "https://")
+    .replace(/(?:https?:\/\/)?(?:zalo|zal0)\s*(?:\[\s*\.\s*\]|\(\s*\.\s*\)|\.|\/)\s*me\s*[\/\\]\s*g\s*[\/\\]\s*([a-z\d_-]+)/gi, "https://zalo.me/g/$1")
+    .replace(/(?:zalo|zal0)\s+me\s+g\s+([a-z\d_-]+)/gi, "https://zalo.me/g/$1")
     .replace(/(\b(?:www\.)?zalo\.me\/g\/)\r?\n[ \t]*([a-z\d_-]+)/gi, "$1$2");
 
   return [...text.matchAll(LINK_RE)].flatMap(([match]) => {
@@ -60,7 +62,7 @@ export function extractMessageLinks(message) {
     }
   }
   collect(content);
-  for (const key of ["caption", "description", "desc", "params", "attachment"]) {
+  for (const key of ["caption", "description", "desc", "params", "attachment", "quote", "msg", "message"]) {
     if (message.data?.[key] !== undefined) collect(message.data[key], 0, key);
   }
   return extractLinks(fields.join(" "));
