@@ -413,14 +413,29 @@ test("tagging @Bot in group triggers AI assistant", async (t) => {
   assert.match(sent.at(-1).text, /Trợ lý AI trả lời: ai là người phát minh máy tính\?/);
 });
 
-test("direct message (DM) to bot automatically calls AI", async (t) => {
+test("direct message (DM) to bot only calls AI for authorized users", async (t) => {
   const aiService = new AIService({ apiKey: "sk-test-key-123456" });
   aiService.ask = async (prompt) => `DM AI: ${prompt}`;
-  const { sent, moderation } = fixture(t, { aiService });
+  const { sent, moderation } = fixture(t, { aiService, aiDmUserIds: [ADMIN] });
 
+  // 1. Unauthorized member sends regular DM -> completely ignored
   await moderation.handleCommand({
     type: 0, isSelf: false, threadId: MEMBER,
     data: { uidFrom: MEMBER, content: "Xin chào bot" },
+  });
+  assert.equal(sent.length, 0);
+
+  // 2. Unauthorized member sends /ai command in DM -> gets locked message
+  await moderation.handleCommand({
+    type: 0, isSelf: false, threadId: MEMBER,
+    data: { uidFrom: MEMBER, content: "/ai bạn là ai?" },
+  });
+  assert.match(sent.at(-1).text, /chỉ mở cho Quản trị viên điều hành/);
+
+  // 3. Authorized user (ADMIN in aiDmUserIds) sends regular DM -> calls AI
+  await moderation.handleCommand({
+    type: 0, isSelf: false, threadId: ADMIN,
+    data: { uidFrom: ADMIN, content: "Xin chào bot" },
   });
   assert.equal(sent.at(-1).text, "DM AI: Xin chào bot");
 });

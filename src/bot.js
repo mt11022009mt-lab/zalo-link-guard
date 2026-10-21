@@ -176,6 +176,7 @@ if (!listingGroups) {
         config.groupIds.includes(config.reviewGroupId))) ||
       (config.violationWindowHours !== undefined && (!Number.isInteger(config.violationWindowHours) ||
         config.violationWindowHours < 1 || config.violationWindowHours > 168)) ||
+      (config.aiDmUserIds !== undefined && !validIds(config.aiDmUserIds)) ||
       (config.historySweepSeconds !== undefined && (config.historySweepSeconds !== 0 &&
         (!Number.isInteger(config.historySweepSeconds) || config.historySweepSeconds < 30 || config.historySweepSeconds > 300)))) {
     console.error("Cấu hình không hợp lệ. Kiểm tra groupIds, trustedUserIds, allowedDomains, blockImages, reviewGroupId, violationWindowHours và dryRun trong config.json.");
@@ -272,6 +273,8 @@ const aiService = new AIService({
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || config.deepseekBaseUrl || "https://api.deepseek.com",
 });
 console.log(`[TRỢ LÝ AI] Động cơ AI: ${aiService.getProviderName()} (Sẵn sàng phục vụ nhóm)`);
+const dmAllowed = Array.isArray(config.aiDmUserIds) && config.aiDmUserIds.length > 0 ? config.aiDmUserIds : (config.trustedUserIds || []);
+console.log(`[TRỢ LÝ AI] Nhắn tin riêng (DM): Chỉ mở quyền cho ${dmAllowed.length} tài khoản điều hành.`);
 
 const moderation = createModeration({ api, config, state, aiService });
 

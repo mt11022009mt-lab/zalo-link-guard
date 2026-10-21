@@ -262,8 +262,17 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
-    // 2. Nhắn tin riêng (DM) với Bot (tự động hỏi AI)
+    // 2. Nhắn tin riêng (DM) với Bot (tự động hỏi AI) - CHỈ MỞ CHO TÀI KHOẢN ĐIỀU HÀNH
     if (aiService && !isGroup && typeof text === "string" && text.trim() && !text.trim().startsWith("/")) {
+      const allowedDmUsers = Array.isArray(config.aiDmUserIds) && config.aiDmUserIds.length > 0
+        ? config.aiDmUserIds
+        : (Array.isArray(config.trustedUserIds) ? config.trustedUserIds : []);
+
+      if (!allowedDmUsers.includes(senderId)) {
+        log.info?.(`[AI DM] Bỏ qua tin nhắn riêng từ người dùng không được cấp quyền (${senderId}).`);
+        return false;
+      }
+
       const cooldown = aiService.checkCooldown(senderId);
       if (!cooldown.allowed) {
         await reply(message, `⏳ Bạn nhắn nhanh quá, vui lòng chờ ${cooldown.waitSec} giây nhé!`);
@@ -456,6 +465,17 @@ export function createModeration({ api, config, state, aiService, log = console 
       if (!aiService) {
         await reply(message, "🤖 Module AI chưa được khởi tạo trên hệ thống.");
         return true;
+      }
+
+      // Nếu nhắn tin riêng (DM), chỉ cho phép tài khoản điều hành
+      if (!isGroup) {
+        const allowedDmUsers = Array.isArray(config.aiDmUserIds) && config.aiDmUserIds.length > 0
+          ? config.aiDmUserIds
+          : (Array.isArray(config.trustedUserIds) ? config.trustedUserIds : []);
+        if (!allowedDmUsers.includes(senderId)) {
+          await reply(message, "🔒 Tính năng nhắn tin riêng với AI chỉ mở cho Quản trị viên điều hành bot. Bạn có thể dùng lệnh /ai hoặc tag @bot trong nhóm nhé!");
+          return true;
+        }
       }
       const cooldown = aiService.checkCooldown(senderId);
       if (!cooldown.allowed) {
