@@ -1,5 +1,14 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.16.3: Tự động kích hoạt lọc link & ảnh cho mọi nhóm Bot làm Phó nhóm (Admin)
+
+Bản cập nhật thông minh giải quyết triệt để vấn đề bot không xóa link/ảnh ở nhóm mới:
+- **Tự động nhận diện quyền QTV:** Khi bot được set làm Phó nhóm hoặc Trưởng nhóm ở **bất kỳ nhóm Zalo nào** (kể cả nhóm mới tạo, nhóm cộng đồng), bot sẽ **tự động nạp nhóm đó vào danh sách bảo vệ** mà không cần sửa `config.json` thủ công!
+- **Hỗ trợ nhóm "Tricker by brays" (ID `908709376055683451`):** Đã kích hoạt bảo vệ lọc link và xóa ảnh spam.
+- **Trang chẩn đoán trực tiếp `/debug`:** Mở link `https://<ten-domain>.onrender.com/debug` để xem 50 log gần nhất và tình trạng lọc tin theo thời gian thực.
+
+---
+
 ## Bản 1.16.1: Tối ưu thông báo chống spam — Chỉ báo khi vào thành công nhóm mới
 
 Bản tinh chỉnh thông minh theo yêu cầu vận hành thực tế:

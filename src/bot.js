@@ -246,8 +246,25 @@ const broadcaster = createBroadcaster({ api, config });
 console.log(`[RẢI LINK] Đã kích hoạt module Broadcaster; Nhóm mục tiêu ban đầu: ${broadcaster.store.data.targetGroups.length}`);
 
 // Tự động đồng bộ tất cả nhóm tài khoản đang có vào danh sách rải link
-void broadcaster.syncAllExistingGroups().then((targets) => {
+void broadcaster.syncAllExistingGroups().then(async (targets) => {
   console.log(`[RẢI LINK] Đã đồng bộ ${targets.length} nhóm của tài khoản vào danh sách mục tiêu.`);
+  try {
+    if (typeof api.getGroupInfo === "function" && targets.length) {
+      const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
+      const info = await api.getGroupInfo(targets);
+      for (const gid of targets) {
+        const gData = info?.gridInfoMap?.[gid];
+        if (gData && isGroupAdmin(gData, ownId)) {
+          if (!config.groupIds.includes(String(gid))) {
+            config.groupIds.push(String(gid));
+            console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${gid} (${gData.name || "Không rõ"}): Bot là Quản trị viên -> Đã kích hoạt chế độ lọc link & ảnh!`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[TỰ ĐỘNG BẢO VỆ] Lỗi quét quyền QTV lúc khởi động:", err.message);
+  }
   if (config.broadcast?.autoScanExistingGroups !== false) {
     console.log("[RẢI LINK] Bắt đầu quét ngầm lịch sử các nhóm để tìm link mời nhóm mới...");
     broadcaster.scanAllGroupsForInvites().then((res) => {
@@ -279,10 +296,23 @@ async function processMessage(message, { source = "live" } = {}) {
   const isImage = isImageMessage(message);
   const links = extractMessageLinks(message);
   if (isImage || links.length > 0) {
-    const isTargetGroup = config.groupIds.includes(String(message.threadId));
+    let isTargetGroup = config.groupIds.includes(String(message.threadId));
+    if (!isTargetGroup) {
+      try {
+        const group = await getVerifiedGroupInfo(api, message.threadId);
+        const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
+        if (isGroupAdmin(group, ownId)) {
+          config.groupIds.push(String(message.threadId));
+          isTargetGroup = true;
+          console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${message.threadId} (${group?.name || "Không rõ"}): Phát hiện bot là Phó/Trưởng nhóm -> Tự động nạp vào danh sách bảo vệ!`);
+        }
+      } catch (err) {
+        console.warn(`[KIỂM TRA QUYỀN QTV NHÓM] ${message.threadId}:`, err.message);
+      }
+    }
     const isTrusted = config.trustedUserIds.includes(String(message.data?.uidFrom));
     if (!isTargetGroup) {
-      console.log(`[LỌC TIN] Nhóm ${message.threadId} có ${isImage ? "ảnh" : ""}${links.length ? "link" : ""} nhưng KHÔNG nằm trong danh sách groupIds được bảo vệ (${config.groupIds.join(",")}) -> BỎ QUA.`);
+      console.log(`[LỌC TIN] Nhóm ${message.threadId} có ${isImage ? "ảnh " : ""}${links.length ? "link " : ""}nhưng KHÔNG nằm trong danh sách groupIds được bảo vệ (${config.groupIds.join(",")}) và bot không phải QTV -> BỎ QUA.`);
     } else if (isTrusted) {
       console.log(`[LỌC TIN] Nhóm ${message.threadId}: Người gửi ${message.data?.uidFrom} thuộc danh sách tin cậy (trustedUserIds) -> BỎ QUA.`);
     }
