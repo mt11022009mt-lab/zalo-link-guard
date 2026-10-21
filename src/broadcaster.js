@@ -211,8 +211,39 @@ export function createBroadcaster({
           if (newlyAddedGid && typeof api.getGroupInfo === "function") {
             try {
               const info = await api.getGroupInfo([newlyAddedGid]);
-              newlyAddedName = info?.gridInfoMap?.[newlyAddedGid]?.name || "";
-            } catch {}
+              const groupData = info?.gridInfoMap?.[newlyAddedGid];
+              newlyAddedName = groupData?.name || "";
+
+              const ownId = typeof api.getOwnId === "function" ? String(api.getOwnId()) : String(api.ctx?.uid || "");
+              const isOwnAdmin = groupData && (
+                String(groupData.creatorId) === ownId ||
+                (Array.isArray(groupData.adminIds) && groupData.adminIds.some((id) => String(id) === ownId))
+              );
+              const isChatLocked = groupData?.setting?.lockSendMsg === 1;
+
+              if (isChatLocked && !isOwnAdmin) {
+                log.info(`[TỰ RỜI NHÓM] Nhóm ${newlyAddedGid} (${newlyAddedName}) bị khóa chat. Đang tự rời nhóm...`);
+                if (typeof api.leaveGroup === "function") {
+                  try {
+                    await api.leaveGroup(newlyAddedGid, true);
+                  } catch (e) {
+                    log.warn(`[LỖI RỜI NHÓM] ${newlyAddedGid}:`, e.message);
+                  }
+                }
+                store.data.targetGroups = store.data.targetGroups.filter((g) => g !== newlyAddedGid);
+                if (store.data.campaign && store.data.campaign.status === "running") {
+                  store.data.campaign.items = store.data.campaign.items.filter((it) => it.groupId !== newlyAddedGid);
+                }
+                store.save();
+
+                await notifyOperators(
+                  `🚪 [TỰ ĐỘNG RỜI NHÓM KHÓA CHAT]\n- Tên nhóm: ${newlyAddedName || newlyAddedGid}\n- ID: ${newlyAddedGid}\n- Link: ${link}\n- Lý do: Nhóm này chỉ cho phép Trưởng/Phó nhóm nhắn tin. Bot đã tự động rời nhóm ngay lập tức.`
+                );
+                return;
+              }
+            } catch (e) {
+              log.warn(`[KIỂM TRA QUYỀN NHÓM MỚI] ${newlyAddedGid}:`, e.message);
+            }
           }
         }
       } catch (e) {
@@ -310,6 +341,22 @@ export function createBroadcaster({
       log.error(`[LỖI GỬI RẢI LINK] Nhóm ${item.groupId}:`, err.message);
       item.status = "failed";
       item.lastError = err.message;
+
+      const errStr = String(err.message || "").toLowerCase();
+      const isLocked = err.code === 166 || err.code === 178 ||
+        /quyen|quyền|permission|lock|khóa|khoa|chỉ trưởng|chi truong/i.test(errStr);
+      if (isLocked) {
+        log.warn(`[TỰ RỜI NHÓM] Nhóm ${item.groupId} không có quyền gửi tin. Đang tự rời nhóm...`);
+        if (typeof api.leaveGroup === "function") {
+          try {
+            await api.leaveGroup(item.groupId, true);
+          } catch {}
+        }
+        store.data.targetGroups = store.data.targetGroups.filter((g) => g !== item.groupId);
+        await notifyOperators(
+          `🚪 [TỰ ĐỘNG RỜI NHÓM]\n- ID nhóm: ${item.groupId}\n- Lý do: Bot không có quyền gửi tin nhắn tại nhóm này (Bị khóa chat).\n- Bot đã tự out nhóm và loại bỏ khỏi danh sách rải link.`
+        );
+      }
     } finally {
       campaign.nextSendAt = clock() + nextIntervalSec * 1000;
       store.save();
@@ -391,6 +438,49 @@ export function createBroadcaster({
     }
   }
 
+  async function filterAndLeaveLockedGroups() {
+    if (typeof api.getGroupInfo !== "function" || typeof api.leaveGroup !== "function") {
+      return { totalChecked: 0, leftGroups: [] };
+    }
+    const ownId = typeof api.getOwnId === "function" ? String(api.getOwnId()) : String(api.ctx?.uid || "");
+    const targets = [...store.data.targetGroups];
+    const leftGroups = [];
+
+    for (const gid of targets) {
+      try {
+        const info = await api.getGroupInfo([gid]);
+        const groupData = info?.gridInfoMap?.[gid];
+        if (!groupData) continue;
+        const isOwnAdmin = (
+          String(groupData.creatorId) === ownId ||
+          (Array.isArray(groupData.adminIds) && groupData.adminIds.some((id) => String(id) === ownId))
+        );
+        const isChatLocked = groupData?.setting?.lockSendMsg === 1;
+
+        if (isChatLocked && !isOwnAdmin) {
+          const gName = groupData.name || gid;
+          log.info(`[LỌC NHÓM] Nhóm ${gid} (${gName}) khóa chat. Đang tự rời...`);
+          try {
+            await api.leaveGroup(gid, true);
+          } catch {}
+          store.data.targetGroups = store.data.targetGroups.filter((g) => g !== gid);
+          if (store.data.campaign && store.data.campaign.status === "running") {
+            store.data.campaign.items = store.data.campaign.items.filter((it) => it.groupId !== gid);
+          }
+          leftGroups.push({ id: gid, name: gName });
+        }
+      } catch (err) {
+        log.warn(`[LỌC NHÓM] Lỗi kiểm tra nhóm ${gid}:`, err.message);
+      }
+    }
+
+    if (leftGroups.length > 0) {
+      store.save();
+    }
+
+    return { totalChecked: targets.length, leftGroups, remainingTargets: store.data.targetGroups.length };
+  }
+
   async function handleCommand(message) {
     const text = getCommandText(message);
     if (!text) return false;
@@ -401,7 +491,7 @@ export function createBroadcaster({
       return true;
     }
 
-    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget|quetnhom|quetlink|danhsachnhom)(?:\s+([\s\S]*))?$/i);
+    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget|quetnhom|quetlink|danhsachnhom|locnhom|donnhom)(?:\s+([\s\S]*))?$/i);
     if (!match) return false;
 
     if (!isOperator(senderId)) {
@@ -543,6 +633,21 @@ export function createBroadcaster({
       return true;
     }
 
+    if (command === "locnhom" || command === "donnhom") {
+      await api.sendMessage("🧹 Đang kiểm tra quyền gửi tin ở tất cả các nhóm bot đang có mặt...", message.threadId, message.type);
+      const res = await filterAndLeaveLockedGroups();
+      if (!res.leftGroups.length) {
+        await api.sendMessage(`✅ Tất cả ${res.totalChecked} nhóm bot đang có mặt đều có quyền gửi tin nhắn!`, message.threadId, message.type);
+      } else {
+        const names = res.leftGroups.map((g) => `- ${g.name} (${g.id})`).join("\n");
+        await api.sendMessage(
+          `🚪 Đã tự động rời ${res.leftGroups.length}/${res.totalChecked} nhóm bị khóa chat:\n${names}\n\nHiện còn ${res.remainingTargets} nhóm sẵn sàng rải link!`,
+          message.threadId, message.type
+        );
+      }
+      return true;
+    }
+
     if (command === "trangthairai") {
       const camp = store.data.campaign;
       const totalGroups = store.data.targetGroups.length;
@@ -584,6 +689,7 @@ export function createBroadcaster({
     stepBroadcastWorker,
     syncAllExistingGroups,
     scanAllGroupsForInvites,
+    filterAndLeaveLockedGroups,
     close: () => {
       clearInterval(joinTimer);
       clearInterval(broadcastTimer);

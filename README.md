@@ -1,5 +1,29 @@
 # Bot dọn link trong nhóm Zalo
 
+## Bản 1.16.0: Tự động rời nhóm bị Khóa Chat (Không có quyền nhắn tin) & Lệnh `/locnhom`
+
+Bản nâng cấp giúp tài khoản bot luôn sạch sẽ, chỉ giữ lại các nhóm có thể hoạt động:
+
+### 1. Tự động kiểm tra quyền nhắn tin ngay khi vào nhóm
+- **Kiểm tra tức thì:** Ngay khi bot tự động tham gia một nhóm Zalo mới qua link mời, bot đọc cài đặt nhóm (`setting.lockSendMsg`).
+- **Tự động out nhóm im lặng:** Nếu nhóm cài đặt *“Chỉ Trưởng/Phó nhóm được gửi tin nhắn”* và tài khoản bot không phải là Quản trị viên, bot sẽ **tự động rời khỏi nhóm ngay lập tức trong im lặng** (`silent: true`).
+- **Báo cáo về cho bạn:** Bot nhắn tin riêng cho người điều hành:
+  ```text
+  🚪 [TỰ ĐỘNG RỜI NHÓM KHÓA CHAT]
+  - Tên nhóm: ...
+  - ID nhóm: ...
+  - Lý do: Nhóm chỉ cho phép Trưởng/Phó nhóm nhắn tin. Bot đã tự động rời nhóm.
+  ```
+
+### 2. Tự động out nhóm khi rải link gặp lỗi khóa chat
+- Trong quá trình rải link lác đác, nếu một nhóm đột ngột khóa chat hoặc không cho thành viên thường gửi tin nhắn, bot sẽ tự động out nhóm đó, gạch tên khỏi danh sách mục tiêu và thông báo cho bạn.
+
+### 3. Lệnh chủ động lọc nhóm (`/locnhom` / `/donnhom`)
+- Bất cứ lúc nào bạn nhắn `/locnhom` (hoặc `/donnhom`), bot sẽ đi rà soát lại toàn bộ các nhóm trong danh sách.
+- Nhóm nào bị khóa chat mà bot không nhắn tin được sẽ được dọn sạch, chỉ giữ lại các nhóm thật sự sẵn sàng rải link!
+
+---
+
 ## Bản 1.15.0: Quét toàn bộ nhóm hiện có (`/quetnhom`) & Bóc tách lệnh từ Link Preview Card
 
 Bản nâng cấp mạnh mẽ cho tính năng rải link và auto-join:

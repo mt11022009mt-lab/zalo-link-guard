@@ -16,15 +16,21 @@ function createFixture(t, overrides = {}) {
 
   const sent = [];
   const joinedLinks = [];
+  const leftGroups = [];
   let currentTime = 1_000_000_000;
 
   const api = {
+    getOwnId: () => "bot-user-id",
     sendMessage: async (text, threadId, type) => {
       sent.push({ text, threadId, type });
       return { message: { msgId: `msg-${sent.length}` }, attachment: [] };
     },
     joinGroupLink: async (link) => {
       joinedLinks.push(link);
+      return "";
+    },
+    leaveGroup: async (gid, silent) => {
+      leftGroups.push({ gid, silent });
       return "";
     },
     getAllGroups: async () => ({
@@ -60,6 +66,7 @@ function createFixture(t, overrides = {}) {
     api,
     sent,
     joinedLinks,
+    leftGroups,
     broadcaster,
     setTime: (tMs) => { currentTime = tMs; },
     advanceTime: (s) => { currentTime += s * 1000; },
@@ -289,4 +296,68 @@ test("notifies operators when a group is joined and catches obfuscated invite li
   assert.ok(op1Notice);
   assert.ok(op1Notice.text.includes("Giao Lưu Tricker 2026"));
   assert.ok(op1Notice.text.includes("testobf123"));
+});
+
+test("auto leaves locked group upon join when bot is not admin", async (t) => {
+  const { api, broadcaster, sent, leftGroups, advanceTime } = createFixture(t);
+  api.getAllGroups = async () => ({
+    gridVerMap: { "group-1": "1", "group-2": "1", "group-locked": "1" },
+  });
+  api.getGroupInfo = async () => ({
+    gridInfoMap: {
+      "group-locked": {
+        name: "Nhóm Thông Báo Khóa Chat",
+        creatorId: "admin-999",
+        adminIds: ["admin-888"],
+        setting: { lockSendMsg: 1 },
+      },
+    },
+  });
+
+  broadcaster.queueGroupInvite("https://zalo.me/g/lockedgroup123");
+  advanceTime(35);
+  await broadcaster.stepJoinWorker();
+
+  // Bot must have left group-locked silently
+  assert.equal(leftGroups.length, 1);
+  assert.equal(leftGroups[0].gid, "group-locked");
+  assert.equal(leftGroups[0].silent, true);
+  assert.ok(!broadcaster.store.data.targetGroups.includes("group-locked"));
+
+  // Operator must be notified
+  const notice = sent.find((s) => s.threadId === OPERATOR_1 && s.text.includes("TỰ ĐỘNG RỜI NHÓM KHÓA CHAT"));
+  assert.ok(notice);
+});
+
+test("auto leaves group when broadcast send fails due to permission denied", async (t) => {
+  const { api, broadcaster, sent, leftGroups } = createFixture(t);
+
+  // Operator starts campaign
+  await broadcaster.handleCommand({
+    isSelf: false,
+    threadId: OPERATOR_1,
+    type: ThreadType.User,
+    data: { uidFrom: OPERATOR_1, content: "/railink https://example.com/promo {A|B}" },
+  });
+
+  // Mock sendMessage for group-1 to fail with permission error
+  api.sendMessage = async (text, threadId, type) => {
+    if (threadId === "group-1") {
+      const err = new Error("Chỉ trưởng/phó nhóm mới có quyền gửi tin nhắn");
+      err.code = 166;
+      throw err;
+    }
+    sent.push({ text, threadId, type });
+    return { message: { msgId: "123" }, attachment: [] };
+  };
+
+  await broadcaster.stepBroadcastWorker();
+
+  assert.equal(leftGroups.length, 1);
+  assert.equal(leftGroups[0].gid, "group-1");
+  assert.ok(!broadcaster.store.data.targetGroups.includes("group-1"));
+
+  // Notice sent to operator
+  const notice = sent.find((s) => s.threadId === OPERATOR_1 && s.text.includes("TỰ ĐỘNG RỜI NHÓM"));
+  assert.ok(notice);
 });
