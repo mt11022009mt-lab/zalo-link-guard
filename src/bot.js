@@ -59,6 +59,23 @@ const server = createServer((req, res) => {
     }));
   }
 
+  if (req.url.startsWith("/group")) {
+    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+    const gid = urlObj.searchParams.get("id") || config?.groupIds?.[0];
+    try {
+      const ginfo = await api.getGroupInfo([gid]);
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      return res.end(JSON.stringify({
+        groupId: gid,
+        ownId: String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? ""),
+        data: ginfo?.gridInfoMap?.[gid] ?? null,
+      }, null, 2));
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      return res.end(JSON.stringify({ error: e.message }));
+    }
+  }
+
   if (req.url === "/debug" || req.url === "/status") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     return res.end(JSON.stringify({
@@ -301,10 +318,13 @@ async function processMessage(message, { source = "live" } = {}) {
       try {
         const group = await getVerifiedGroupInfo(api, message.threadId);
         const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
-        if (isGroupAdmin(group, ownId)) {
+        const isSelfAdmin = isGroupAdmin(group, ownId);
+        if (isSelfAdmin) {
           config.groupIds.push(String(message.threadId));
           isTargetGroup = true;
           console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${message.threadId} (${group?.name || "Không rõ"}): Phát hiện bot là Phó/Trưởng nhóm -> Tự động nạp vào danh sách bảo vệ!`);
+        } else {
+          console.log(`[KIỂM TRA QUYỀN QTV] Nhóm ${message.threadId} (${group?.name}): ownId=${ownId}, creatorId=${group?.creatorId}, adminIds=${JSON.stringify(group?.adminIds)}`);
         }
       } catch (err) {
         console.warn(`[KIỂM TRA QUYỀN QTV NHÓM] ${message.threadId}:`, err.message);
