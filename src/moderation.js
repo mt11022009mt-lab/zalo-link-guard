@@ -2,8 +2,17 @@ import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
 
 export function getCommandText(message) {
-  if (!message || message.isSelf || !message.data) return "";
+  if (!message || !message.data) return "";
   const data = message.data;
+
+  // Nếu là tin nhắn tự gửi (isSelf - ví dụ bot owner gõ lệnh trực tiếp trên Zalo Desktop bằng nick bot):
+  // Chỉ nhận diện khi nội dung là lệnh slash command rõ ràng (bắt đầu bằng "/")
+  if (message.isSelf) {
+    if (typeof data.content === "string" && data.content.trim().startsWith("/")) {
+      return data.content.trim();
+    }
+    return "";
+  }
 
   // 1. Direct string content
   if (typeof data.content === "string") {
@@ -55,7 +64,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat)(?:\s|$)/i;
 
 export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
@@ -246,9 +255,12 @@ export function createModeration({ api, config, state, aiService, log = console 
     const text = getCommandText(message);
     const mentions = message.data?.mentions;
     const isGroup = message.type === ThreadType.Group;
-    const senderId = String(message.data?.uidFrom || message.threadId);
+    const senderId = String(message.data?.uidFrom || (message.isSelf ? ownId : message.threadId));
     const isBotTagged = isGroup && Array.isArray(mentions) && mentions.some((m) => String(m.uid) === ownId);
     const isGroupAdminOnly = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(String(message.threadId)));
+
+    // Không kích hoạt AI tag nếu là tin do bot tự gửi (tránh bot tự trả lời bot)
+    if (message.isSelf && isBotTagged) return false;
 
     // 1. Tag @Bot trong nhóm để trò chuyện AI
     if (aiService && isBotTagged) {
@@ -308,6 +320,7 @@ export function createModeration({ api, config, state, aiService, log = console 
     const matched = text.match(COMMAND_RE);
     if (!matched) return false;
     const command = matched[1].toLowerCase();
+    log.info(`[LỆNH NHẬN ĐƯỢC] Lệnh="/${command}" | Nhóm=${message.threadId} | Người_gửi=${senderId} | isSelf=${Boolean(message.isSelf)}`);
 
     if (command === "myid") {
       await reply(message, `UID Zalo của bạn là: ${senderId}`);
@@ -476,7 +489,7 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
-    if (["chiqtv", "qtvonly", "adminonly"].includes(command)) {
+    if (["chiqtv", "qtvonly", "adminonly", "khoachat", "lockchat", "mochat", "unlockchat"].includes(command)) {
       let targetGroupId = String(message.threadId);
       const isGroup = message.type === ThreadType.Group;
       const parts = text.split(/\s+/);
@@ -490,34 +503,80 @@ export function createModeration({ api, config, state, aiService, log = console 
           targetGroupId = config.groupIds[0];
           action = (parts[1] || "").toLowerCase();
         } else {
-          await reply(message, "Cú pháp trong tin nhắn riêng: /chiqtv <Mã_Nhóm> [on/off]");
+          await reply(message, "Cú pháp trong tin nhắn riêng: /khoachat <Mã_Nhóm> [on/off] hoặc /chiqtv <Mã_Nhóm> [on/off]");
           return true;
         }
       } else {
         action = (parts[1] || "").toLowerCase();
       }
 
+      if (["mochat", "unlockchat"].includes(command)) {
+        action = "off";
+      } else if (["khoachat", "lockchat"].includes(command) && !action) {
+        action = "on";
+      }
+
       try {
-        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        const isOperator = senderId === ownId || (Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId));
+        let info = null;
+        try {
+          info = await groupInfo(targetGroupId);
+        } catch (err) {
+          log.warn?.(`[GROUP INFO] Không lấy được thông tin nhóm ${targetGroupId}:`, err.message);
+        }
+
         if (!isOperator) {
-          const info = await groupInfo(targetGroupId);
-          if (!isAdmin(info, senderId)) throw new Error("Chỉ Trưởng nhóm/Phó nhóm (QTV) mới có quyền đổi chế độ này.");
+          if (!info || !isAdmin(info, senderId)) {
+            throw new Error("Chỉ Trưởng nhóm/Phó nhóm (QTV) mới có quyền dùng lệnh này.");
+          }
         }
 
         const currentlyEnabled = Boolean(config.adminOnly || state?.isAdminOnly?.(targetGroupId));
         let nextState = !currentlyEnabled;
-        if (["on", "bat", "enable", "1"].includes(action)) nextState = true;
-        if (["off", "tat", "disable", "0"].includes(action)) nextState = false;
+        if (["on", "bat", "enable", "1", "khoa"].includes(action)) nextState = true;
+        if (["off", "tat", "disable", "0", "mo"].includes(action)) nextState = false;
 
         state.setAdminOnly(targetGroupId, nextState);
         await state.flush();
 
+        // Thử cập nhật cài đặt khóa chat của Zalo (lockSendMsg)
+        let zaloSettingChanged = false;
+        if (typeof api.updateGroupSettings === "function") {
+          try {
+            const currentSetting = info?.setting || {};
+            await api.updateGroupSettings({
+              blockName: Boolean(currentSetting.blockName),
+              signAdminMsg: Boolean(currentSetting.signAdminMsg),
+              setTopicOnly: Boolean(currentSetting.setTopicOnly),
+              enableMsgHistory: Boolean(currentSetting.enableMsgHistory),
+              joinAppr: Boolean(currentSetting.joinAppr),
+              lockCreatePost: Boolean(currentSetting.lockCreatePost),
+              lockCreatePoll: Boolean(currentSetting.lockCreatePoll),
+              lockViewMember: Boolean(currentSetting.lockViewMember),
+              lockSendMsg: nextState,
+            }, targetGroupId);
+            zaloSettingChanged = true;
+            log.info?.(`[ZALO SETTING] Đã cập nhật lockSendMsg=${nextState} cho nhóm ${targetGroupId}`);
+          } catch (zErr) {
+            log.warn?.(`[ZALO SETTING] Không thể đổi lockSendMsg trên Zalo cho nhóm ${targetGroupId}:`, zErr.message || String(zErr));
+          }
+        }
+
         if (nextState) {
-          await reply(message, `🔒 ĐÃ BẬT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Từ bây giờ, CHỈ Trưởng nhóm và Phó nhóm mới có thể nhắn tin / gọi AI / ra lệnh cho bot.\n(Thành viên thường sẽ bị từ chối khi gọi bot).`);
+          if (zaloSettingChanged) {
+            await reply(message, `🔒 ĐÃ KHÓA CHAT NHÓM THÀNH CÔNG!\n👉 Đã bật cài đặt Zalo: Chỉ Trưởng/Phó nhóm mới được gửi tin nhắn vào nhóm.\n👉 Đồng thời bot chỉ nhận lệnh từ Quản trị viên (thành viên thường bị khóa chat và không thể gọi bot).`);
+          } else {
+            await reply(message, `🔒 ĐÃ BẬT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Từ bây giờ, CHỈ Trưởng nhóm và Phó nhóm mới có thể nhắn tin / gọi AI / ra lệnh cho bot.\n(Lưu ý: Để khóa toàn bộ khung chat Zalo của thành viên thường, hãy cấp quyền Trưởng nhóm cho bot hoặc bật trong Cài đặt nhóm Zalo).`);
+          }
         } else {
-          await reply(message, `🌐 ĐÃ TẮT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Tất cả thành viên trong nhóm đều có thể trò chuyện với bot (/ai hoặc tag @bot).`);
+          if (zaloSettingChanged) {
+            await reply(message, `🌐 ĐÃ MỞ CHAT NHÓM THÀNH CÔNG!\n👉 Khung chat Zalo đã mở lại cho tất cả thành viên trong nhóm.\n👉 Tất cả thành viên đều có thể gửi tin nhắn và trò chuyện với bot (/ai hoặc tag @bot).`);
+          } else {
+            await reply(message, `🌐 ĐÃ TẮT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Tất cả thành viên trong nhóm đều có thể trò chuyện với bot (/ai hoặc tag @bot).`);
+          }
         }
       } catch (error) {
+        log.error?.(`[LỖI LỆNH ${command}]`, error.message);
         await reply(message, `Không thay đổi được chế độ: ${error.message}`);
       }
       return true;
@@ -579,7 +638,7 @@ export function createModeration({ api, config, state, aiService, log = console 
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /chiqtv [on/off] : Bật/tắt chế độ chỉ cho Trưởng/Phó nhóm (QTV) nhắn tin/gọi AI.\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash. Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /khoachat [on/off] : Khóa chat nhóm trên Zalo (Chỉ QTV mới được gửi tin nhắn) hoặc /mochat.\n- /chiqtv [on/off] : Bật/tắt chế độ chỉ cho Trưởng/Phó nhóm nhắn tin & gọi AI bot.\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash. Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

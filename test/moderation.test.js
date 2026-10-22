@@ -24,14 +24,24 @@ function fixture(t, overrides = {}) {
   });
   const sent = [];
   const kicked = [];
+  const groupSettingsUpdated = [];
   const api = {
     getOwnId: () => BOT,
-    getGroupInfo: async (id) => ({ gridInfoMap: { [id]: { creatorId: OWNER, adminIds: [BOT, ADMIN] } } }),
+    getGroupInfo: async (id) => ({
+      gridInfoMap: {
+        [id]: {
+          creatorId: OWNER,
+          adminIds: [BOT, ADMIN],
+          setting: { lockSendMsg: 0, blockName: 1, signAdminMsg: 1 },
+        },
+      },
+    }),
     sendMessage: async (text, id, type) => { sent.push({ text, id, type }); },
     removeUserFromGroup: async (id, groupId) => { kicked.push({ id, groupId }); return { errorMembers: [] }; },
+    updateGroupSettings: async (settings, groupId) => { groupSettingsUpdated.push({ settings, groupId }); return ""; },
   };
   const moderation = createModeration({ api, config: { ...config, ...overrides }, state, aiService: overrides.aiService, log: logger });
-  return { api, state, sent, kicked, moderation };
+  return { api, state, sent, kicked, groupSettingsUpdated, moderation };
 }
 
 const linkMessage = (id) => ({
@@ -348,20 +358,21 @@ test("/tatbot and /batbot toggle group moderation status", async (t) => {
   assert.match(sent.at(-1).text, /ĐANG BẬT/);
 });
 
-test("/chiqtv toggles admin-only mode and restricts bot messaging", async (t) => {
+test("/chiqtv and /khoachat toggle admin-only mode and lock/unlock group chat", async (t) => {
   const aiService = new AIService({ apiKey: "test-key" });
   aiService.ask = async (prompt) => `AI: ${prompt}`;
-  const { state, sent, moderation } = fixture(t, { aiService });
+  const { state, sent, groupSettingsUpdated, moderation } = fixture(t, { aiService });
 
   // 1. Ordinary member cannot toggle /chiqtv
   await moderation.handleCommand(approval("/chiqtv", MEMBER));
   assert.equal(state.isAdminOnly(GROUP), false);
   assert.match(sent.at(-1).text, /Chỉ Trưởng nhóm\/Phó nhóm/);
 
-  // 2. Admin enables /chiqtv
+  // 2. Admin enables /chiqtv on -> locks group chat on Zalo and enables admin-only
   await moderation.handleCommand(approval("/chiqtv on", ADMIN));
   assert.equal(state.isAdminOnly(GROUP), true);
-  assert.match(sent.at(-1).text, /ĐÃ BẬT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN/);
+  assert.equal(groupSettingsUpdated.at(-1).settings.lockSendMsg, true);
+  assert.match(sent.at(-1).text, /ĐÃ KHÓA CHAT NHÓM THÀNH CÔNG/);
 
   // 3. Status shows admin-only is ON
   await moderation.handleCommand(approval("/status", ADMIN));
@@ -382,14 +393,30 @@ test("/chiqtv toggles admin-only mode and restricts bot messaging", async (t) =>
   await moderation.handleCommand(approval("/ai câu hỏi từ admin", ADMIN));
   assert.equal(sent.at(-1).text, "AI: câu hỏi từ admin");
 
-  // 7. Admin disables /chiqtv
-  await moderation.handleCommand(approval("/chiqtv off", ADMIN));
+  // 7. Admin unlocks chat via /mochat
+  await moderation.handleCommand(approval("/mochat", ADMIN));
   assert.equal(state.isAdminOnly(GROUP), false);
-  assert.match(sent.at(-1).text, /ĐÃ TẮT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN/);
+  assert.equal(groupSettingsUpdated.at(-1).settings.lockSendMsg, false);
+  assert.match(sent.at(-1).text, /ĐÃ MỞ CHAT NHÓM THÀNH CÔNG/);
 
   // 8. Ordinary member can now ask /ai
   await moderation.handleCommand(approval("/ai thành viên hỏi lại", MEMBER));
   assert.equal(sent.at(-1).text, "AI: thành viên hỏi lại");
+
+  // 9. Admin locks chat via /khoachat
+  await moderation.handleCommand(approval("/khoachat", ADMIN));
+  assert.equal(state.isAdminOnly(GROUP), true);
+  assert.equal(groupSettingsUpdated.at(-1).settings.lockSendMsg, true);
+  assert.match(sent.at(-1).text, /ĐÃ KHÓA CHAT NHÓM THÀNH CÔNG/);
+
+  // 10. Self-sent command (owner testing from bot account on Zalo Desktop)
+  await moderation.handleCommand({
+    type: 1, isSelf: true, threadId: GROUP,
+    data: { uidFrom: BOT, content: "/mochat" },
+  });
+  assert.equal(state.isAdminOnly(GROUP), false);
+  assert.equal(groupSettingsUpdated.at(-1).settings.lockSendMsg, false);
+  assert.match(sent.at(-1).text, /ĐÃ MỞ CHAT NHÓM THÀNH CÔNG/);
 });
 
 test("/ai command provides syntax guide and config guidance", async (t) => {

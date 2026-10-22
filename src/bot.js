@@ -206,7 +206,7 @@ if (!listingGroups) {
 }
 
 const qrPath = resolve(process.cwd(), "zalo-login-qr.png");
-const zalo = new Zalo();
+const zalo = new Zalo({ selfListen: true });
 let api;
 try {
   api = await loginWithSession({
@@ -321,7 +321,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 
@@ -421,22 +421,39 @@ async function processMessage(message, { source = "live" } = {}) {
   }
 }
 
+let isReconnecting = false;
+let reconnectTimer = null;
+
+function safeReconnect(delay = 5000) {
+  if (isReconnecting) return;
+  isReconnecting = true;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    try {
+      console.log(`[KẾT NỐI] Đang kích hoạt lại listener sau ${delay / 1000}s...`);
+      api.listener.start({ retryOnClose: true });
+    } catch (err) {
+      console.error("[KẾT NỐI] Không thể restart listener:", err.message);
+    } finally {
+      isReconnecting = false;
+    }
+  }, delay);
+}
+
 api.listener.on("message", (message) => {
   void processMessage(message).catch((error) => console.error("Lỗi xử lý tin nhắn:", error));
 });
 api.listener.on("error", (error) => console.error("Lỗi kết nối Zalo:", error));
 api.listener.on("connected", () => {
   botStatus = "đang_hoạt_động";
+  isReconnecting = false;
+  clearTimeout(reconnectTimer);
   console.log("[KẾT NỐI] Đã nhận tin mới từ Zalo.");
 });
 api.listener.on("disconnected", (code) => console.warn(`[KẾT NỐI] Bị ngắt; mã=${code}.`));
 api.listener.on("closed", (code) => {
-  console.warn(`[KẾT NỐI] Đã đóng; mã=${code}. Đang kích hoạt kết nối lại...`);
-  try {
-    api.listener.start({ retryOnClose: true });
-  } catch (err) {
-    console.error("[KẾT NỐI] Không thể restart listener:", err.message);
-  }
+  console.warn(`[KẾT NỐI] Đã đóng; mã=${code}. Đang lên lịch kết nối lại an toàn...`);
+  safeReconnect(5000);
 });
 api.listener.start({ retryOnClose: true });
 if (config.historySweepSeconds !== 0) {
