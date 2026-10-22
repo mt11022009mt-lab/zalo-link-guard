@@ -348,6 +348,50 @@ test("/tatbot and /batbot toggle group moderation status", async (t) => {
   assert.match(sent.at(-1).text, /ĐANG BẬT/);
 });
 
+test("/chiqtv toggles admin-only mode and restricts bot messaging", async (t) => {
+  const aiService = new AIService({ apiKey: "test-key" });
+  aiService.ask = async (prompt) => `AI: ${prompt}`;
+  const { state, sent, moderation } = fixture(t, { aiService });
+
+  // 1. Ordinary member cannot toggle /chiqtv
+  await moderation.handleCommand(approval("/chiqtv", MEMBER));
+  assert.equal(state.isAdminOnly(GROUP), false);
+  assert.match(sent.at(-1).text, /Chỉ Trưởng nhóm\/Phó nhóm/);
+
+  // 2. Admin enables /chiqtv
+  await moderation.handleCommand(approval("/chiqtv on", ADMIN));
+  assert.equal(state.isAdminOnly(GROUP), true);
+  assert.match(sent.at(-1).text, /ĐÃ BẬT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN/);
+
+  // 3. Status shows admin-only is ON
+  await moderation.handleCommand(approval("/status", ADMIN));
+  assert.match(sent.at(-1).text, /Chế độ chỉ QTV: 🔒 BẬT/);
+
+  // 4. Ordinary member tries /ai in admin-only group -> blocked with notice
+  await moderation.handleCommand(approval("/ai test câu hỏi", MEMBER));
+  assert.match(sent.at(-1).text, /CHỈ QUẢN TRỊ VIÊN mới được trò chuyện/);
+
+  // 5. Ordinary member tries tagging @Bot in admin-only group -> blocked with notice
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: MEMBER, content: "@Bot alo", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /CHỈ QUẢN TRỊ VIÊN mới được trò chuyện/);
+
+  // 6. Admin asks /ai in admin-only group -> answered normally
+  await moderation.handleCommand(approval("/ai câu hỏi từ admin", ADMIN));
+  assert.equal(sent.at(-1).text, "AI: câu hỏi từ admin");
+
+  // 7. Admin disables /chiqtv
+  await moderation.handleCommand(approval("/chiqtv off", ADMIN));
+  assert.equal(state.isAdminOnly(GROUP), false);
+  assert.match(sent.at(-1).text, /ĐÃ TẮT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN/);
+
+  // 8. Ordinary member can now ask /ai
+  await moderation.handleCommand(approval("/ai thành viên hỏi lại", MEMBER));
+  assert.equal(sent.at(-1).text, "AI: thành viên hỏi lại");
+});
+
 test("/ai command provides syntax guide and config guidance", async (t) => {
   const aiService = new AIService({ apiKey: "" });
   const { sent, moderation } = fixture(t, { aiService });

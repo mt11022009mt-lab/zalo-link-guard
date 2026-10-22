@@ -55,7 +55,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|deepseek)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly)(?:\s|$)/i;
 
 export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
@@ -230,15 +230,35 @@ export function createModeration({ api, config, state, aiService, log = console 
     }
   }
 
+  async function checkIsAdmin(groupId, userId) {
+    if (userId === ownId || (Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(userId))) {
+      return true;
+    }
+    try {
+      const info = await groupInfo(groupId);
+      return isAdmin(info, userId);
+    } catch {
+      return false;
+    }
+  }
+
   async function handleCommand(message) {
     const text = getCommandText(message);
     const mentions = message.data?.mentions;
     const isGroup = message.type === ThreadType.Group;
     const senderId = String(message.data?.uidFrom || message.threadId);
     const isBotTagged = isGroup && Array.isArray(mentions) && mentions.some((m) => String(m.uid) === ownId);
+    const isGroupAdminOnly = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(String(message.threadId)));
 
     // 1. Tag @Bot trong nhóm để trò chuyện AI
     if (aiService && isBotTagged) {
+      if (isGroupAdminOnly) {
+        const isUserAdmin = await checkIsAdmin(String(message.threadId), senderId);
+        if (!isUserAdmin) {
+          await reply(message, "🔒 Nhóm hiện đang bật chế độ CHỈ QUẢN TRỊ VIÊN mới được trò chuyện với bot.");
+          return true;
+        }
+      }
       let prompt = typeof text === "string" ? text : "";
       for (const m of mentions) {
         if (String(m.uid) === ownId && typeof prompt === "string") {
@@ -456,6 +476,53 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
+    if (["chiqtv", "qtvonly", "adminonly"].includes(command)) {
+      let targetGroupId = String(message.threadId);
+      const isGroup = message.type === ThreadType.Group;
+      const parts = text.split(/\s+/);
+      let action = "";
+
+      if (!isGroup) {
+        if (parts[1] && /^\d+$/.test(parts[1].trim())) {
+          targetGroupId = parts[1].trim();
+          action = (parts[2] || "").toLowerCase();
+        } else if (config.groupIds.length === 1) {
+          targetGroupId = config.groupIds[0];
+          action = (parts[1] || "").toLowerCase();
+        } else {
+          await reply(message, "Cú pháp trong tin nhắn riêng: /chiqtv <Mã_Nhóm> [on/off]");
+          return true;
+        }
+      } else {
+        action = (parts[1] || "").toLowerCase();
+      }
+
+      try {
+        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        if (!isOperator) {
+          const info = await groupInfo(targetGroupId);
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ Trưởng nhóm/Phó nhóm (QTV) mới có quyền đổi chế độ này.");
+        }
+
+        const currentlyEnabled = Boolean(config.adminOnly || state?.isAdminOnly?.(targetGroupId));
+        let nextState = !currentlyEnabled;
+        if (["on", "bat", "enable", "1"].includes(action)) nextState = true;
+        if (["off", "tat", "disable", "0"].includes(action)) nextState = false;
+
+        state.setAdminOnly(targetGroupId, nextState);
+        await state.flush();
+
+        if (nextState) {
+          await reply(message, `🔒 ĐÃ BẬT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Từ bây giờ, CHỈ Trưởng nhóm và Phó nhóm mới có thể nhắn tin / gọi AI / ra lệnh cho bot.\n(Thành viên thường sẽ bị từ chối khi gọi bot).`);
+        } else {
+          await reply(message, `🌐 ĐÃ TẮT CHẾ ĐỘ CHỈ QUẢN TRỊ VIÊN cho nhóm ${targetGroupId}.\n👉 Tất cả thành viên trong nhóm đều có thể trò chuyện với bot (/ai hoặc tag @bot).`);
+        }
+      } catch (error) {
+        await reply(message, `Không thay đổi được chế độ: ${error.message}`);
+      }
+      return true;
+    }
+
     if (["ai", "ask", "chat", "gemini"].includes(command)) {
       const prompt = text.replace(COMMAND_RE, "").trim();
       if (!prompt) {
@@ -465,6 +532,15 @@ export function createModeration({ api, config, state, aiService, log = console 
       if (!aiService) {
         await reply(message, "🤖 Module AI chưa được khởi tạo trên hệ thống.");
         return true;
+      }
+
+      // Nếu nhóm bật chế độ chỉ QTV, chỉ cho phép Trưởng/Phó nhóm
+      if (isGroup && isGroupAdminOnly) {
+        const isUserAdmin = await checkIsAdmin(String(message.threadId), senderId);
+        if (!isUserAdmin) {
+          await reply(message, "🔒 Nhóm hiện đang bật chế độ CHỈ QUẢN TRỊ VIÊN mới được trò chuyện với bot.");
+          return true;
+        }
       }
 
       // Nếu nhắn tin riêng (DM), chỉ cho phép tài khoản điều hành
@@ -492,17 +568,18 @@ export function createModeration({ api, config, state, aiService, log = console 
       const isGroup = message.type === ThreadType.Group;
       const targetGid = String(message.threadId);
       const isPaused = isGroup && Boolean(state?.isGroupDisabled?.(targetGid));
+      const isOnlyQtv = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(targetGid));
       const groupLine = isGroup
-        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}`
+        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}\n- Chế độ chỉ QTV: ${isOnlyQtv ? "🔒 BẬT (/chiqtv để mở cho cả nhóm)" : "🌐 TẮT (/chiqtv để bật)"}`
         : "";
       const aiProvider = aiService?.getProviderName?.() || "Google Gemini Flash (Miễn phí 100%)";
       const aiStatus = aiService?.isConfigured?.() ? `🟢 ĐÃ KÍCH HOẠT (${aiProvider})` : "⚪ Chưa cấu hình";
-      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.2.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Trợ lý AI: ${aiStatus}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (100% Silent)" : "TẮT"}`);
+      await reply(message, `🛡️ ZALO LINK GUARD BOT (v2.3.0)\n- Trạng thái tổng: Đang hoạt động${groupLine}\n- Trợ lý AI: ${aiStatus}\n- Nhóm đang quản lý: ${config.groupIds.length} nhóm\n- Lọc link không phép: BẬT\n- Chặn ảnh & Album spam: ${config.blockImages !== false ? "BẬT" : "TẮT"}\n- Tự động kick vi phạm: ${config.autoKick !== false ? `BẬT (${config.maxViolations ?? 3} lần/${config.violationWindowHours ?? 24}h)` : "TẮT"}\n- Chế độ im lặng: ${config.silentModeration ? "BẬT (100% Silent)" : "TẮT"}`);
       return true;
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash. Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /chiqtv [on/off] : Bật/tắt chế độ chỉ cho Trưởng/Phó nhóm (QTV) nhắn tin/gọi AI.\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash. Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

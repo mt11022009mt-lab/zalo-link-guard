@@ -20,6 +20,9 @@ export class ModerationState {
     if (!Array.isArray(this.data.disabledGroups)) {
       this.data.disabledGroups = [];
     }
+    if (!Array.isArray(this.data.adminOnlyGroups)) {
+      this.data.adminOnlyGroups = [];
+    }
   }
 
   isGroupDisabled(groupId) {
@@ -39,6 +42,27 @@ export class ModerationState {
     const gid = String(groupId);
     this.data.disabledGroups = this.data.disabledGroups.filter((id) => id !== gid);
     this.save();
+    return true;
+  }
+
+  isAdminOnly(groupId) {
+    return Array.isArray(this.data.adminOnlyGroups) && this.data.adminOnlyGroups.includes(String(groupId));
+  }
+
+  setAdminOnly(groupId, enabled = true) {
+    const gid = String(groupId);
+    if (!Array.isArray(this.data.adminOnlyGroups)) {
+      this.data.adminOnlyGroups = [];
+    }
+    if (enabled) {
+      if (!this.data.adminOnlyGroups.includes(gid)) {
+        this.data.adminOnlyGroups.push(gid);
+        this.save();
+      }
+    } else {
+      this.data.adminOnlyGroups = this.data.adminOnlyGroups.filter((id) => id !== gid);
+      this.save();
+    }
     return true;
   }
 

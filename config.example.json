@@ -2,6 +2,7 @@
   "groupIds": ["THAY_BANG_ID_NHOM"],
   "trustedUserIds": [],
   "aiDmUserIds": [],
+  "adminOnly": false,
   "allowedDomains": ["zalo.me"],
   "blockZaloLinks": true,
   "blockZaloGroupInvites": true,
