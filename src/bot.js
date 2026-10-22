@@ -268,9 +268,7 @@ try {
 }
 const aiService = new AIService({
   geminiApiKey: process.env.GEMINI_API_KEY || config.geminiApiKey,
-  deepseekApiKey: process.env.DEEPSEEK_API_KEY || config.deepseekApiKey,
-  deepseekModel: process.env.DEEPSEEK_MODEL || config.deepseekModel || "deepseek-chat",
-  deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || config.deepseekBaseUrl || "https://api.deepseek.com",
+  geminiModel: process.env.GEMINI_MODEL || config.geminiModel || "gemini-3.5-flash",
 });
 console.log(`[TRỢ LÝ AI] Động cơ AI: ${aiService.getProviderName()} (Sẵn sàng phục vụ nhóm)`);
 const dmAllowed = Array.isArray(config.aiDmUserIds) && config.aiDmUserIds.length > 0 ? config.aiDmUserIds : (config.trustedUserIds || []);

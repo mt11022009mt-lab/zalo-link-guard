@@ -362,32 +362,31 @@ test("/ai command provides syntax guide and config guidance", async (t) => {
 });
 
 test("/ai command answers questions and enforces cooldown", async (t) => {
-  const aiService = new AIService({ apiKey: "sk-test-key-123456" });
-  aiService.ask = async (prompt) => `DeepSeek trả lời cho: ${prompt}`;
+  const aiService = new AIService({ apiKey: "test-key" });
+  aiService.ask = async (prompt) => `Gemini trả lời cho: ${prompt}`;
   const { sent, moderation } = fixture(t, { aiService });
 
   // Normal question
   await moderation.handleCommand(approval("/ai thời tiết hôm nay thế nào?", MEMBER));
-  assert.equal(sent.at(-1).text, "DeepSeek trả lời cho: thời tiết hôm nay thế nào?");
+  assert.equal(sent.at(-1).text, "Gemini trả lời cho: thời tiết hôm nay thế nào?");
 
   // Rapid question within cooldown
   await moderation.handleCommand(approval("/ai câu hỏi tiếp theo?", MEMBER));
   assert.match(sent.at(-1).text, /Bạn hỏi nhanh quá/);
 });
 
-test("AIService handles insufficient balance (402) promptly", async (t) => {
-  const service = new AIService({ apiKey: "sk-test-key", baseUrl: "http://127.0.0.1:9" });
-  // Mock fetch failure
+test("AIService handles Gemini API failure gracefully", async (t) => {
+  const service = new AIService({ apiKey: "test-key" });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: false,
-    status: 402,
-    json: async () => ({ error: { message: "Insufficient Balance" } }),
+    status: 500,
+    json: async () => ({ error: { message: "Internal error" } }),
   });
 
   try {
     const res = await service.ask("test query");
-    assert.match(res, /hết số dư \(\$0 - Insufficient Balance\)/);
+    assert.match(res, /AI đang bận một chút/);
   } finally {
     globalThis.fetch = originalFetch;
   }
