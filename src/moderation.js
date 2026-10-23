@@ -638,7 +638,21 @@ export function createModeration({ api, config, state, aiService, log = console 
     }
 
     if (command === "help") {
-      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:\n- /khoachat [on/off] : Khóa chat nhóm trên Zalo (Chỉ QTV mới được gửi tin nhắn) hoặc /mochat.\n- /chiqtv [on/off] : Bật/tắt chế độ chỉ cho Trưởng/Phó nhóm nhắn tin & gọi AI bot.\n- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash. Hoặc tag @bot trong nhóm.\n- /tatbot : Tạm dừng bảo vệ nhóm này (dừng xóa tin/ảnh & kick).\n- /batbot : Kích hoạt lại bảo vệ nhóm.\n- /vipham : Xem danh sách thành viên vi phạm trong nhóm.\n- /kick @tên : Kick trực tiếp thành viên vi phạm khỏi nhóm.\n- /tha @tên : Xóa điểm vi phạm cho thành viên (hoặc /xoavipham @tên).\n- /status : Xem trạng thái hoạt động của bot.\n- /myid : Xem UID Zalo của bạn.`);
+      await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:
+- /railink <URL> <mẫu spin> : Bắt đầu chiến dịch rải link an toàn tới các nhóm.
+- /stoprai : Dừng ngay chiến dịch rải link.
+- /trangthairai : Xem tiến độ rải link, số nhóm đã gửi và thời gian chờ.
+- /dsnhom : Xem danh sách các nhóm mục tiêu nhận link.
+- /themtarget <id> : Thêm ID nhóm vào danh sách nhận link (hoặc /xoatarget <id>).
+- /quetnhom : Quét tin nhắn các nhóm để tự động tìm link mời và join nhóm mới.
+- /locnhom : Tự kiểm tra và rời khỏi các nhóm bị khóa chat.
+- /khoachat [on/off] : Khóa chat nhóm trên Zalo (Chỉ QTV mới gửi được tin) hoặc /mochat.
+- /chiqtv [on/off] : Bật/tắt chế độ chỉ cho QTV nhắn tin & gọi AI bot.
+- /ai <câu hỏi> : Trò chuyện siêu tốc với Trợ lý AI Google Gemini Flash.
+- /tatbot / /batbot : Tạm dừng / kích hoạt lại bảo vệ nhóm.
+- /vipham / /tha @tên : Quản lý vi phạm và xóa điểm vi phạm.
+- /status : Xem trạng thái hoạt động của bot.
+- /myid : Xem UID Zalo của bạn.`);
       return true;
     }
 

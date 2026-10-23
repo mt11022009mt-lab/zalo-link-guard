@@ -10,6 +10,7 @@ import { createHistorySweep } from "./history-sweep.js";
 import { loginWithSession } from "./session.js";
 import { getVerifiedGroupInfo, isGroupAdmin } from "./group-roles.js";
 import { AIService } from "./ai-service.js";
+import { createBroadcaster } from "./broadcaster.js";
 
 // Chống crash đột tử do lỗi mạng hoặc unhandled rejection từ WebSocket / Zalo API
 process.on("unhandledRejection", (reason) => {
@@ -105,6 +106,10 @@ const server = createServer(async (req, res) => {
         messagesInFlight: messagesInFlight.size,
         monitoredGroupsCount: config?.groupIds?.length ?? 0,
         violationsCount: state?.listViolations?.()?.length ?? 0,
+        broadcastTargetsCount: broadcaster?.store?.data?.targetGroups?.length ?? 0,
+        broadcastCampaignStatus: broadcaster?.store?.data?.campaign?.status ?? "none",
+        broadcastDailyCount: broadcaster?.store?.data?.dailyCounter?.count ?? 0,
+        joinQueueCount: broadcaster?.joinQueue?.length ?? 0,
       },
       recentLogs: logBuffer.slice(-50),
     }, null, 2));
@@ -277,6 +282,17 @@ console.log(`[TRỢ LÝ AI] Nhắn tin riêng (DM): Chỉ mở quyền cho ${dmA
 
 const moderation = createModeration({ api, config, state, aiService });
 
+const broadcastStatePath = process.env.STATE_DIR
+  ? resolve(process.env.STATE_DIR, "broadcast-state.json")
+  : resolve(process.cwd(), "broadcast-state.json");
+const broadcaster = createBroadcaster({
+  api,
+  config,
+  filePath: broadcastStatePath,
+  log: console,
+});
+console.log(`[RẢI LINK] Module Rải Link sẵn sàng (Mục tiêu: ${broadcaster.store.data.targetGroups.length} nhóm).`);
+
 // Tự động quét và kích hoạt bảo vệ cho tất cả nhóm bot làm Quản trị viên / Phó nhóm
 async function syncProtectedGroups() {
   try {
@@ -317,11 +333,12 @@ function markSeen(messageKey) {
 
 async function processMessage(message, { source = "live" } = {}) {
   lastMessageTime = new Date().toISOString();
+  if (source === "live" && await broadcaster.handleCommand(message)) return;
   if (source === "live" && await moderation.handleCommand(message)) return;
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 
