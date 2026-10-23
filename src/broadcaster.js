@@ -124,18 +124,9 @@ export function createBroadcaster({
   }
 
   const joinQueue = [];
-  let isJoining = false;
-  let lastJoinAt = 0;
 
   function queueGroupInvite(url) {
-    if (!url || typeof url !== "string") return false;
-    const cleanUrl = url.trim().replace(/[.,!?;:)}\]]+$/u, "");
-    if (!/zalo\.me\/g\//i.test(cleanUrl)) return false;
-    if (store.data.joinedLinks.includes(cleanUrl)) return false;
-    if (joinQueue.includes(cleanUrl)) return false;
-    joinQueue.push(cleanUrl);
-    log.info?.(`[HÀNG ĐỢI VÀO NHÓM] Đã nhận link: ${cleanUrl} (đang chờ: ${joinQueue.length})`);
-    return true;
+    return false;
   }
 
   async function syncAllExistingGroups() {
@@ -153,123 +144,12 @@ export function createBroadcaster({
       }
       if (added > 0) {
         store.save();
-        log.info?.(`[ĐỒNG BỘ NHÓM] Đã nạp ${added} nhóm vào danh sách mục tiêu rải link (tổng: ${store.data.targetGroups.length}).`);
+        log.info?.(`[ĐỒNG BỘ NHÓM] Đã nạp ${added} nhóm mới bạn vừa tham gia vào danh sách mục tiêu rải link (tổng: ${store.data.targetGroups.length}).`);
       }
       return store.data.targetGroups;
     } catch (err) {
       log.warn?.("[ĐỒNG BỘ NHÓM] Lỗi lấy danh sách nhóm:", err.message);
       return store.data.targetGroups;
-    }
-  }
-
-  async function stepJoinWorker() {
-    if (isJoining || !joinQueue.length) return;
-    const now = clock();
-    const today = new Date(now).toISOString().slice(0, 10);
-    if (!store.data.dailyJoins || store.data.dailyJoins.date !== today) {
-      store.data.dailyJoins = { date: today, count: 0 };
-    }
-    const maxJoinsPerDay = config.broadcast?.maxJoinsPerDay ?? 25;
-    if (store.data.dailyJoins.count >= maxJoinsPerDay) return;
-
-    const minDelay = (config.broadcast?.minJoinDelaySeconds ?? 45) * 1000;
-    const maxDelay = (config.broadcast?.maxJoinDelaySeconds ?? 90) * 1000;
-    const joinCooldown = Math.max(minDelay, Math.floor(minDelay + randomFn() * Math.max(0, maxDelay - minDelay)));
-    if (now - lastJoinAt < joinCooldown) return;
-
-    const link = joinQueue.shift();
-    isJoining = true;
-    lastJoinAt = clock();
-
-    try {
-      log.info?.(`[TỰ ĐỘNG VÀO NHÓM] Đang thử tham gia: ${link}`);
-      if (typeof api.joinGroupLink === "function") {
-        await api.joinGroupLink(link);
-      }
-      store.data.joinedLinks.push(link);
-      store.data.dailyJoins.count++;
-
-      let newlyAddedGid = null;
-      let newlyAddedName = "";
-      try {
-        if (typeof api.getAllGroups === "function") {
-          const groups = await api.getAllGroups();
-          const ids = Object.keys(groups?.gridVerMap || {});
-          for (const gid of ids) {
-            const sId = String(gid);
-            if (!store.data.targetGroups.includes(sId)) {
-              store.data.targetGroups.push(sId);
-              newlyAddedGid = sId;
-              log.info?.(`[VÀO NHÓM THÀNH CÔNG] Đã thêm nhóm mới ${sId} vào danh sách mục tiêu rải link!`);
-              if (store.data.campaign && store.data.campaign.status === "running") {
-                const inCampaign = store.data.campaign.items.some((it) => it.groupId === sId);
-                if (!inCampaign) {
-                  store.data.campaign.items.push({ groupId: sId, status: "queued", attempts: 0 });
-                }
-              }
-            }
-          }
-
-          if (newlyAddedGid && typeof api.getGroupInfo === "function") {
-            try {
-              const info = await api.getGroupInfo([newlyAddedGid]);
-              const groupData = info?.gridInfoMap?.[newlyAddedGid];
-              newlyAddedName = groupData?.name || "";
-
-              const ownId = typeof api.getOwnId === "function" ? String(api.getOwnId()) : String(api.ctx?.uid || "");
-              const isOwnAdmin = groupData && (
-                String(groupData.creatorId) === ownId ||
-                (Array.isArray(groupData.adminIds) && groupData.adminIds.some((id) => String(id) === ownId))
-              );
-              const isChatLocked = groupData?.setting?.lockSendMsg === 1;
-
-              if (isChatLocked && !isOwnAdmin) {
-                log.info?.(`[TỰ RỜI NHÓM] Nhóm ${newlyAddedGid} (${newlyAddedName}) bị khóa chat. Đang tự rời...`);
-                if (typeof api.leaveGroup === "function") {
-                  try { await api.leaveGroup(newlyAddedGid, true); } catch {}
-                }
-                store.data.targetGroups = store.data.targetGroups.filter((g) => g !== newlyAddedGid);
-                if (store.data.campaign && store.data.campaign.status === "running") {
-                  store.data.campaign.items = store.data.campaign.items.filter((it) => it.groupId !== newlyAddedGid);
-                }
-                store.save();
-                return;
-              }
-            } catch (e) {
-              log.warn?.(`[KIỂM TRA QUYỀN NHÓM MỚI] ${newlyAddedGid}:`, e.message);
-            }
-          }
-        }
-      } catch (e) {
-        log.warn?.("[VÀO NHÓM] Không cập nhật được danh sách nhóm sau khi join:", e.message);
-      }
-      store.save();
-
-      const notifyLines = [
-        "🎉 [BOT ĐÃ TỰ ĐỘNG VÀO NHÓM MỚI]",
-        newlyAddedName ? `- Tên nhóm: ${newlyAddedName}` : null,
-        newlyAddedGid ? `- ID nhóm: ${newlyAddedGid}` : null,
-        `- Link nhóm: ${link}`,
-        `- Đã nạp vào danh sách mục tiêu rải link! (Tổng: ${store.data.targetGroups.length} nhóm)`,
-      ].filter(Boolean);
-      await notifyOperators(notifyLines.join("\n"));
-    } catch (err) {
-      log.warn?.(`[VÀO NHÓM THẤT BẠI] ${link}: ${err.message}`);
-      const errStr = String(err.message || "");
-      const isAlreadyMember = err.code === 178 || errStr.includes("178");
-      const isApprovalRequired = err.code === 240 || errStr.includes("240");
-      if (isAlreadyMember || isApprovalRequired) {
-        store.data.joinedLinks.push(link);
-        store.save();
-      }
-      const isRateLimited = err.code === 216 || err.code === 221 ||
-        /giới hạn|gioi han|limit|quá nhanh|qua nhanh|tạm thời|tam thoi/i.test(errStr);
-      if (isRateLimited) {
-        log.warn?.(`[TẠM NGHỈ AUTO-JOIN] Zalo báo đạt giới hạn (${err.message}). Tạm ngưng join nhóm 30 phút.`);
-        lastJoinAt = clock() + 30 * 60 * 1000;
-      }
-    } finally {
-      isJoining = false;
     }
   }
 
@@ -359,9 +239,6 @@ export function createBroadcaster({
       isSending = false;
     }
   }
-
-  const joinTimer = setInterval(() => void stepJoinWorker(), 15_000);
-  joinTimer.unref();
 
   const broadcastTimer = setInterval(() => void stepBroadcastWorker(), 5_000);
   broadcastTimer.unref();
@@ -559,7 +436,7 @@ export function createBroadcaster({
       const totalGroups = store.data.targetGroups.length;
       const todayCount = store.data.dailyCounter?.count ?? 0;
       const maxSends = config.broadcast?.maxSendsPerDay ?? 50;
-      let textRes = `📊 TRẠNG THÁI RẢI LINK:\n- Tổng nhóm mục tiêu: ${totalGroups} nhóm\n- Số tin đã gửi hôm nay: ${todayCount}/${maxSends}\n- Hàng đợi tự join nhóm: ${joinQueue.length} link đang chờ\n`;
+      let textRes = `📊 TRẠNG THÁI RẢI LINK:\n- Tổng nhóm mục tiêu: ${totalGroups} nhóm\n- Số tin đã gửi hôm nay: ${todayCount}/${maxSends}\n`;
       if (!camp || camp.status === "stopped" || camp.status === "done") {
         textRes += "- Chiến dịch: Hiện không có chiến dịch nào đang chạy.";
       } else {
@@ -621,31 +498,17 @@ export function createBroadcaster({
     }
 
     if (command === "joinnhom") {
-      if (!arg || !/zalo\.me\/g\//i.test(arg)) {
-        await reply(message, "Cú pháp: /joinnhom https://zalo.me/g/xxxxxx");
-        return true;
-      }
-      const queued = queueGroupInvite(arg);
-      if (queued) {
-        await reply(message, "✅ Đã thêm link nhóm vào hàng đợi tự động tham gia. Bot sẽ tự động join sau ít phút với giãn cách an toàn.");
-      } else {
-        await reply(message, "Link nhóm này đã được xử lý hoặc đã có sẵn trong hàng đợi.");
-      }
+      await reply(message, "💡 Bạn cứ dùng điện thoại hoặc Zalo Desktop tự bấm tham gia nhóm nhé (an toàn 100% không lo Zalo quét hạn chế). Sau khi vào nhóm, bot sẽ tự động nhận diện tất cả nhóm bạn đã tham gia khi bạn gõ /dsnhom hoặc khi bắt đầu /railink!");
       return true;
     }
 
     if (command === "quetnhom" || command === "quetlink") {
-      await reply(message, "🔍 Đang bắt đầu quét tin nhắn trong tất cả các nhóm bot đang tham gia để tìm link mời nhóm mới...");
-      const res = await scanAllGroupsForInvites();
-      if (res.inProgress) {
-        await reply(message, "Tiến trình quét nhóm đang chạy, vui lòng chờ trong giây lát.");
-        return true;
-      }
+      await reply(message, "🔄 Đang đồng bộ danh sách tất cả các nhóm bạn đã tham gia...");
+      await syncAllExistingGroups();
       await reply(message,
-        `✅ ĐÃ QUÉT XONG ${res.totalGroups} NHÓM!\n` +
-        `- Tìm thấy: ${res.linksFound} link mời nhóm mới\n` +
-        `- Hàng đợi chờ tự động vào nhóm: ${res.queueLength} link (tự join mỗi 45-90s)\n` +
-        `- Tổng nhóm mục tiêu rải link hiện có: ${res.targetGroupsCount} nhóm`
+        `✅ ĐÃ ĐỒNG BỘ XONG!\n` +
+        `- Tổng số nhóm bot đang có mặt: ${store.data.targetGroups.length} nhóm\n` +
+        `👉 Gõ /dsnhom để xem danh sách hoặc /railink để bắt đầu rải.`
       );
       return true;
     }
@@ -675,9 +538,7 @@ export function createBroadcaster({
     scanAllGroupsForInvites,
     filterAndLeaveLockedGroups,
     stepBroadcastWorker,
-    stepJoinWorker,
     stop: () => {
-      clearInterval(joinTimer);
       clearInterval(broadcastTimer);
     },
   };

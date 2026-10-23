@@ -174,7 +174,7 @@ test("managing target groups via /themtarget, /xoatarget, and /dsnhom", async (t
   assert.match(sent.at(-1).text, /Đã xóa nhóm group-99/);
 });
 
-test("auto-joining groups via /joinnhom queues valid invite links", async (t) => {
+test("/joinnhom provides guidance for safe manual joining", async (t) => {
   const { broadcaster, sent } = createTestBroadcaster(t);
 
   await broadcaster.handleCommand({
@@ -184,9 +184,7 @@ test("auto-joining groups via /joinnhom queues valid invite links", async (t) =>
     data: { uidFrom: OPERATOR, content: "/joinnhom https://zalo.me/g/newbox123" },
   });
 
-  assert.equal(broadcaster.joinQueue.length, 1);
-  assert.equal(broadcaster.joinQueue[0], "https://zalo.me/g/newbox123");
-  assert.match(sent.at(-1).text, /Đã thêm link nhóm vào hàng đợi/);
+  assert.match(sent.at(-1).text, /tự bấm tham gia nhóm/);
 });
 
 test("self-sent commands from bot account are supported", async (t) => {
