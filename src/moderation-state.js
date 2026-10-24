@@ -23,6 +23,15 @@ export class ModerationState {
     if (!Array.isArray(this.data.adminOnlyGroups)) {
       this.data.adminOnlyGroups = [];
     }
+    if (!Array.isArray(this.data.allowedUserIds)) {
+      this.data.allowedUserIds = [];
+    }
+    if (!Array.isArray(this.data.strictAdminOnlyGroups)) {
+      this.data.strictAdminOnlyGroups = [];
+    }
+    if (!Array.isArray(this.data.activeGroups)) {
+      this.data.activeGroups = [];
+    }
   }
 
   isGroupDisabled(groupId) {
@@ -63,6 +72,92 @@ export class ModerationState {
       this.data.adminOnlyGroups = this.data.adminOnlyGroups.filter((id) => id !== gid);
       this.save();
     }
+    return true;
+  }
+
+  getAllowedUsers() {
+    return Array.isArray(this.data.allowedUserIds) ? [...this.data.allowedUserIds] : [];
+  }
+
+  isUserAllowed(userId) {
+    return Array.isArray(this.data.allowedUserIds) && this.data.allowedUserIds.includes(String(userId));
+  }
+
+  addAllowedUser(userId) {
+    const uid = String(userId).trim();
+    if (!uid) return false;
+    if (!Array.isArray(this.data.allowedUserIds)) {
+      this.data.allowedUserIds = [];
+    }
+    if (!this.data.allowedUserIds.includes(uid)) {
+      this.data.allowedUserIds.push(uid);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  removeAllowedUser(userId) {
+    const uid = String(userId).trim();
+    if (!Array.isArray(this.data.allowedUserIds)) return false;
+    if (this.data.allowedUserIds.includes(uid)) {
+      this.data.allowedUserIds = this.data.allowedUserIds.filter((id) => id !== uid);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  isStrictAdminOnly(groupId) {
+    return Array.isArray(this.data.strictAdminOnlyGroups) && this.data.strictAdminOnlyGroups.includes(String(groupId));
+  }
+
+  setStrictAdminOnly(groupId, enabled = true) {
+    const gid = String(groupId);
+    if (!Array.isArray(this.data.strictAdminOnlyGroups)) {
+      this.data.strictAdminOnlyGroups = [];
+    }
+    if (enabled) {
+      if (!this.data.strictAdminOnlyGroups.includes(gid)) {
+        this.data.strictAdminOnlyGroups.push(gid);
+        this.save();
+      }
+    } else {
+      this.data.strictAdminOnlyGroups = this.data.strictAdminOnlyGroups.filter((id) => id !== gid);
+      this.save();
+    }
+    return true;
+  }
+
+  isGroupActive(groupId, configuredGroupIds = []) {
+    const gid = String(groupId);
+    if (this.isGroupDisabled(gid)) return false;
+    if (Array.isArray(configuredGroupIds) && configuredGroupIds.includes(gid)) return true;
+    return Array.isArray(this.data.activeGroups) && this.data.activeGroups.includes(gid);
+  }
+
+  activateGroup(groupId) {
+    const gid = String(groupId);
+    if (!Array.isArray(this.data.activeGroups)) {
+      this.data.activeGroups = [];
+    }
+    if (!this.data.activeGroups.includes(gid)) {
+      this.data.activeGroups.push(gid);
+    }
+    if (Array.isArray(this.data.disabledGroups)) {
+      this.data.disabledGroups = this.data.disabledGroups.filter((id) => id !== gid);
+    }
+    this.save();
+    return true;
+  }
+
+  deactivateGroup(groupId) {
+    const gid = String(groupId);
+    if (Array.isArray(this.data.activeGroups)) {
+      this.data.activeGroups = this.data.activeGroups.filter((id) => id !== gid);
+    }
+    this.disableGroup(gid);
+    this.save();
     return true;
   }
 

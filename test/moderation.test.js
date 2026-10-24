@@ -509,3 +509,116 @@ test("direct message (DM) to bot only calls AI for authorized users", async (t) 
   });
   assert.equal(sent.at(-1).text, "DM AI: Xin chào bot");
 });
+
+test("/khoaqtv and user whitelist (/themuser, /xoauser, /dsuser) blocks non-whitelisted admins", async (t) => {
+  const aiService = new AIService({ apiKey: "test-key" });
+  aiService.ask = async (prompt) => `AI: ${prompt}`;
+  const OTHER_ADMIN_BOT = "999888";
+  const { state, sent, moderation } = fixture(t, {
+    aiService,
+    trustedUserIds: [OWNER],
+  });
+
+  // 1. Non-operator (ordinary member or regular admin) cannot run /khoaqtv or /themuser
+  await moderation.handleCommand(approval("/khoaqtv on", ADMIN));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot/);
+
+  await moderation.handleCommand(approval("/themuser 999888", ADMIN));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot/);
+
+  await moderation.handleCommand(approval("/dsuser", ADMIN));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot/);
+
+  // 2. Owner enables /khoaqtv on
+  await moderation.handleCommand(approval("/khoaqtv on", OWNER));
+  assert.equal(state.isStrictAdminOnly(GROUP), true);
+  assert.match(sent.at(-1).text, /ĐÃ BẬT KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+
+  // 3. Regular group admin (or other bot admin) tries /ai or tagging @Bot -> BLOCKED even though they are Zalo admin!
+  await moderation.handleCommand(approval("/ai bot khác hỏi", ADMIN));
+  assert.match(sent.at(-1).text, /KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: OTHER_ADMIN_BOT, content: "@Bot alo", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+
+  // 4. Owner lists users -> empty
+  await moderation.handleCommand(approval("/dsuser", OWNER));
+  assert.match(sent.at(-1).text, /chưa có tài khoản nào được thêm/);
+
+  // 5. Owner whitelists OTHER_ADMIN_BOT via /themuser
+  await moderation.handleCommand(approval(`/themuser ${OTHER_ADMIN_BOT}`, OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ CẤP QUYỀN THÀNH CÔNG/);
+  assert.equal(state.isUserAllowed(OTHER_ADMIN_BOT), true);
+
+  // 6. Whitelisted user can now call AI in strict mode!
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: OTHER_ADMIN_BOT, content: "@Bot alo tôi là bot bạn", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.equal(sent.at(-1).text, "AI: alo tôi là bot bạn");
+
+  // 7. Owner removes user via /xoauser
+  await moderation.handleCommand(approval(`/xoauser ${OTHER_ADMIN_BOT}`, OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ THU HỒI QUYỀN/);
+  assert.equal(state.isUserAllowed(OTHER_ADMIN_BOT), false);
+
+  // 8. Now blocked again
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: OTHER_ADMIN_BOT, content: "@Bot alo lại nè", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+
+  // 9. Owner unlocks strict mode via /khoaqtv off
+  await moderation.handleCommand(approval("/khoaqtv off", OWNER));
+  assert.equal(state.isStrictAdminOnly(GROUP), false);
+  assert.match(sent.at(-1).text, /ĐÃ TẮT KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+});
+
+test("inactive stranger group is completely ignored until owner activates it via /batbot", async (t) => {
+  const aiService = new AIService({ apiKey: "test-key" });
+  aiService.ask = async (prompt) => `AI: ${prompt}`;
+  const STRANGER_GROUP = "888888";
+  const { state, sent, moderation } = fixture(t, {
+    aiService,
+    groupIds: [GROUP],
+    trustedUserIds: [OWNER],
+  });
+
+  const initialSentCount = sent.length;
+
+  // 1. Member in stranger group tags bot or calls /ai -> COMPLETELY IGNORED (0 replies)
+  const ignoredCmd = await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: STRANGER_GROUP,
+    data: { uidFrom: MEMBER, content: "@Bot xin chào", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.equal(ignoredCmd, false);
+  assert.equal(sent.length, initialSentCount);
+
+  // 2. Regular admin in stranger group tries /status -> COMPLETELY IGNORED
+  const ignoredAdmin = await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: STRANGER_GROUP,
+    data: { uidFrom: ADMIN, content: "/status" },
+  });
+  assert.equal(ignoredAdmin, false);
+  assert.equal(sent.length, initialSentCount);
+
+  // 3. Owner issues /batbot in stranger group -> ACTIVATES group!
+  const activated = await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: STRANGER_GROUP,
+    data: { uidFrom: OWNER, content: "/batbot" },
+  });
+  assert.equal(activated, true);
+  assert.match(sent.at(-1).text, /Đã KÍCH HOẠT LẠI bảo vệ nhóm 888888/);
+  assert.equal(state.isGroupActive(STRANGER_GROUP), true);
+
+  // 4. Now member in stranger group can ask AI!
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: STRANGER_GROUP,
+    data: { uidFrom: MEMBER, content: "@Bot chào bạn", mentions: [{ uid: BOT, pos: 0, len: 4, type: 0 }] },
+  });
+  assert.equal(sent.at(-1).text, "AI: chào bạn");
+});

@@ -293,32 +293,18 @@ const broadcaster = createBroadcaster({
 });
 console.log(`[RẢI LINK] Module Rải Link sẵn sàng (Mục tiêu: ${broadcaster.store.data.targetGroups.length} nhóm).`);
 
-// Tự động quét và kích hoạt bảo vệ cho tất cả nhóm bot làm Quản trị viên / Phó nhóm
+// Đồng bộ các nhóm đã được Chủ sở hữu bật bot (từ config.json và state.activeGroups)
 async function syncProtectedGroups() {
   try {
-    if (typeof api.getAllGroups !== "function") return;
-    const allGroups = await api.getAllGroups();
-    const groupIds = Object.keys(allGroups?.gridVerMap || {});
-    if (!groupIds.length) return;
-    const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
-    let info = { gridInfoMap: {} };
-    if (typeof api.getGroupInfo === "function") {
-      info = await api.getGroupInfo(groupIds);
-    }
-    let autoProtectedCount = 0;
-    for (const gid of groupIds) {
-      const gData = info?.gridInfoMap?.[gid];
-      if (gData && isGroupAdmin(gData, ownId)) {
-        if (!config.groupIds.includes(String(gid))) {
-          config.groupIds.push(String(gid));
-          autoProtectedCount++;
-          console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${gid} ("${gData.name || "Không rõ"}"): Bot là QTV -> Đã kích hoạt bảo vệ!`);
-        }
+    const activeFromState = state?.data?.activeGroups || [];
+    for (const gid of activeFromState) {
+      if (!config.groupIds.includes(String(gid))) {
+        config.groupIds.push(String(gid));
       }
     }
-    console.log(`[QUẢN LÝ NHÓM] Đang bảo vệ ${config.groupIds.length} nhóm (tự động kích hoạt ${autoProtectedCount} nhóm QTV mới).`);
+    console.log(`[QUẢN LÝ NHÓM] Đang bảo vệ ${config.groupIds.length} nhóm được kích hoạt chính thức.`);
   } catch (err) {
-    console.warn("[QUẢN LÝ NHÓM] Lỗi quét danh sách nhóm lúc khởi động:", err.message);
+    console.warn("[QUẢN LÝ NHÓM] Lỗi đồng bộ nhóm được kích hoạt:", err.message);
   }
 }
 void syncProtectedGroups();
@@ -338,34 +324,18 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
+
+  const isTargetGroup = config.groupIds.includes(String(message.threadId)) || Boolean(state?.isGroupActive?.(message.threadId, config.groupIds));
+  if (!isTargetGroup) return; // Chống bật bot bừa bãi: Chỉ xử lý nhóm đã được kích hoạt
 
   const isImage = isImageMessage(message);
   const links = extractMessageLinks(message);
   if (isImage || links.length > 0) {
-    let isTargetGroup = config.groupIds.includes(String(message.threadId));
-    if (!isTargetGroup) {
-      try {
-        const group = await getVerifiedGroupInfo(api, message.threadId);
-        const ownId = String(typeof api.getOwnId === "function" ? api.getOwnId() : api.ctx?.uid ?? "");
-        const isSelfAdmin = isGroupAdmin(group, ownId);
-        if (isSelfAdmin) {
-          config.groupIds.push(String(message.threadId));
-          isTargetGroup = true;
-          console.log(`[TỰ ĐỘNG BẢO VỆ] Nhóm ${message.threadId} (${group?.name || "Không rõ"}): Phát hiện bot là Phó/Trưởng nhóm -> Tự động nạp vào danh sách bảo vệ!`);
-        } else {
-          console.log(`[KIỂM TRA QUYỀN QTV] Nhóm ${message.threadId} (${group?.name}): ownId=${ownId}, creatorId=${group?.creatorId}, adminIds=${JSON.stringify(group?.adminIds)}`);
-        }
-      } catch (err) {
-        console.warn(`[KIỂM TRA QUYỀN QTV NHÓM] ${message.threadId}:`, err.message);
-      }
-    }
     const isTrusted = config.trustedUserIds.includes(String(message.data?.uidFrom));
-    if (!isTargetGroup) {
-      console.log(`[LỌC TIN] Nhóm ${message.threadId} có ${isImage ? "ảnh " : ""}${links.length ? "link " : ""}nhưng KHÔNG nằm trong danh sách groupIds được bảo vệ (${config.groupIds.join(",")}) và bot không phải QTV -> BỎ QUA.`);
-    } else if (isTrusted) {
+    if (isTrusted) {
       console.log(`[LỌC TIN] Nhóm ${message.threadId}: Người gửi ${message.data?.uidFrom} thuộc danh sách tin cậy (trustedUserIds) -> BỎ QUA.`);
     }
   }

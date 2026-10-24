@@ -64,7 +64,23 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist)(?:\s|$)/i;
+
+export function parseUserTarget(message, cmdNames = ["themuser", "adduser", "xoauser", "deluser"]) {
+  const text = getCommandText(message);
+  if (!text) return null;
+  const mentions = message.data?.mentions;
+  if (Array.isArray(mentions) && mentions.length === 1 && mentions[0].type !== 1) {
+    const uid = String(mentions[0].uid ?? "").trim();
+    if (/^\d{5,}$/.test(uid)) return uid;
+  }
+  const parts = text.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    const target = parts[1].replace(/^[<@!]+/, "").replace(/[>]+$/, "").trim();
+    if (/^\d{5,}$/.test(target)) return target;
+  }
+  return null;
+}
 
 export function parseManualTarget(message, cmd = "kick") {
   const text = message.data?.content;
@@ -256,20 +272,63 @@ export function createModeration({ api, config, state, aiService, log = console 
     const mentions = message.data?.mentions;
     const isGroup = message.type === ThreadType.Group;
     const senderId = String(message.data?.uidFrom || (message.isSelf ? ownId : message.threadId));
+    const isOperator = senderId === ownId || (Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId));
+    const groupId = isGroup ? String(message.threadId) : "";
+
+    // Kiểm tra nhóm có active không (Chống kích hoạt bot bừa bãi ở nhóm lạ):
+    const isConfiguredGroup = isGroup && config.groupIds.includes(groupId);
+    const isGroupActive = !isGroup || isConfiguredGroup || Boolean(state?.isGroupActive?.(groupId, config.groupIds));
+    const isGroupDisabled = isGroup && Boolean(state?.isGroupDisabled?.(groupId));
+
+    // 1. Nhóm chưa được kích hoạt: chỉ Operator mới được tương tác (ví dụ để /batbot kích hoạt).
+    // Toàn bộ thành viên thường và QTV nhóm lạ: bot hoàn toàn im lặng!
+    if (isGroup && !isGroupActive && !isOperator) {
+      return false;
+    }
+
+    // 2. Nhóm bị tạm tắt (/tatbot): chỉ cho phép lệnh bật lại hoặc xem trạng thái (/status, /help);
+    // các lệnh khác (gọi AI, lọc link, kick) bị im lặng hoàn toàn.
+    if (isGroup && isGroupDisabled && !isOperator) {
+      const matchedCmd = text ? text.match(COMMAND_RE) : null;
+      const cmdName = matchedCmd ? matchedCmd[1].toLowerCase() : "";
+      if (!["batbot", "onbot", "resume", "status", "botinfo", "help"].includes(cmdName)) {
+        return false;
+      }
+    }
+
+    const isStrictOnly = isGroup && Boolean(state?.isStrictAdminOnly?.(groupId));
+    const isGroupAdminOnly = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(groupId) || isStrictOnly);
+
+    async function canUseBot(uId) {
+      if (isOperator) return { allowed: true };
+      if (state?.isUserAllowed?.(uId)) return { allowed: true };
+      if (isStrictOnly) {
+        // Khóa QTV tuyệt đối: Bỏ qua quyền QTV Zalo, chỉ danh sách cấp quyền mới được dùng
+        return { allowed: false, reason: "strict" };
+      }
+      if (isGroupAdminOnly) {
+        const isUserAdmin = await checkIsAdmin(groupId, uId);
+        if (isUserAdmin) return { allowed: true };
+        return { allowed: false, reason: "adminOnly" };
+      }
+      return { allowed: true };
+    }
+
     const isBotTagged = isGroup && Array.isArray(mentions) && mentions.some((m) => String(m.uid) === ownId);
-    const isGroupAdminOnly = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(String(message.threadId)));
 
     // Không kích hoạt AI tag nếu là tin do bot tự gửi (tránh bot tự trả lời bot)
     if (message.isSelf && isBotTagged) return false;
 
     // 1. Tag @Bot trong nhóm để trò chuyện AI
     if (aiService && isBotTagged) {
-      if (isGroupAdminOnly) {
-        const isUserAdmin = await checkIsAdmin(String(message.threadId), senderId);
-        if (!isUserAdmin) {
+      const check = await canUseBot(senderId);
+      if (!check.allowed) {
+        if (check.reason === "strict") {
+          await reply(message, "🔒 Nhóm hiện đang bật chế độ KHÓA QUYỀN QTV TUYỆT ĐỐI. Kể cả Quản trị viên nhóm cũng không thể dùng bot cho đến khi được Chủ bot cấp quyền qua lệnh /themuser.");
+        } else {
           await reply(message, "🔒 Nhóm hiện đang bật chế độ CHỈ QUẢN TRỊ VIÊN mới được trò chuyện với bot.");
-          return true;
         }
+        return true;
       }
       let prompt = typeof text === "string" ? text : "";
       for (const m of mentions) {
@@ -445,7 +504,9 @@ export function createModeration({ api, config, state, aiService, log = console 
       }
 
       try {
-        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        if (isStrictOnly && !isOperator && !state?.isUserAllowed?.(senderId)) {
+          throw new Error("Nhóm đang bật KHÓA QUYỀN QTV TUYỆT ĐỐI. Chỉ Chủ sở hữu hoặc người trong danh sách cấp quyền mới có thể tắt bot.");
+        }
         if (!isOperator) {
           const info = await groupInfo(targetGroupId);
           if (!isAdmin(info, senderId)) throw new Error("Chỉ QTV nhóm mới có quyền tắt bot.");
@@ -475,14 +536,20 @@ export function createModeration({ api, config, state, aiService, log = console 
       }
 
       try {
-        const isOperator = Array.isArray(config.trustedUserIds) && config.trustedUserIds.includes(senderId);
+        if (isStrictOnly && !isOperator && !state?.isUserAllowed?.(senderId)) {
+          throw new Error("Nhóm đang bật KHÓA QUYỀN QTV TUYỆT ĐỐI. Chỉ Chủ sở hữu hoặc người trong danh sách cấp quyền mới có thể bật bot.");
+        }
         if (!isOperator) {
           const info = await groupInfo(targetGroupId);
           if (!isAdmin(info, senderId)) throw new Error("Chỉ QTV nhóm mới có quyền bật bot.");
         }
         state.enableGroup(targetGroupId);
+        state.activateGroup?.(targetGroupId);
+        if (!config.groupIds.includes(targetGroupId)) {
+          config.groupIds.push(targetGroupId);
+        }
         await state.flush();
-        await reply(message, `▶️ Đã KÍCH HOẠT LẠI bảo vệ nhóm ${targetGroupId}.\nBot sẽ tiếp tục xóa link, chặn ảnh spam và đếm vi phạm.`);
+        await reply(message, `▶️ Đã KÍCH HOẠT LẠI bảo vệ nhóm ${targetGroupId}.\nBot sẽ tiếp tục nhận lệnh, trò chuyện AI, xóa link và chặn ảnh spam.`);
       } catch (error) {
         await reply(message, `Không bật được bot: ${error.message}`);
       }
@@ -582,6 +649,102 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
+    if (["khoaqtv", "lockqtv", "strictqtv"].includes(command)) {
+      let targetGroupId = String(message.threadId);
+      const parts = text.split(/\s+/);
+      let action = "";
+      if (!isGroup) {
+        if (parts[1] && /^\d+$/.test(parts[1].trim())) {
+          targetGroupId = parts[1].trim();
+          action = (parts[2] || "").toLowerCase();
+        } else if (config.groupIds.length === 1) {
+          targetGroupId = config.groupIds[0];
+          action = (parts[1] || "").toLowerCase();
+        } else {
+          await reply(message, "Cú pháp trong tin nhắn riêng: /khoaqtv <Mã_Nhóm> [on/off]");
+          return true;
+        }
+      } else {
+        action = (parts[1] || "").toLowerCase();
+      }
+
+      if (!isOperator) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền bật/tắt chế độ Khóa quyền QTV.");
+        return true;
+      }
+
+      const currentlyStrict = Boolean(state?.isStrictAdminOnly?.(targetGroupId));
+      let nextState = !currentlyStrict;
+      if (["on", "bat", "enable", "1", "khoa"].includes(action)) nextState = true;
+      if (["off", "tat", "disable", "0", "mo"].includes(action)) nextState = false;
+
+      state.setStrictAdminOnly(targetGroupId, nextState);
+      if (nextState) state.setAdminOnly(targetGroupId, true);
+      await state.flush();
+
+      if (nextState) {
+        await reply(message, `🔒 ĐÃ BẬT KHÓA QUYỀN QTV TUYỆT ĐỐI cho nhóm ${targetGroupId}!\n👉 Toàn bộ Quản trị viên nhóm Zalo và các Bot khác sẽ KHÔNG THỂ gọi bot hay ra bất kỳ lệnh nào.\n👉 CHỈ DUY NHẤT Chủ sở hữu bot và những ai được thêm vào danh sách qua lệnh /themuser mới được dùng bot.`);
+      } else {
+        await reply(message, `🌐 ĐÃ TẮT KHÓA QUYỀN QTV TUYỆT ĐỐI cho nhóm ${targetGroupId}.\n👉 Quản trị viên nhóm Zalo đã có thể sử dụng lại các lệnh quản lý thông thường.`);
+      }
+      return true;
+    }
+
+    if (["themuser", "adduser", "thembotuser"].includes(command)) {
+      if (!isOperator) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền thêm người vào danh sách sử dụng bot.");
+        return true;
+      }
+      const targetId = parseUserTarget(message, ["themuser", "adduser", "thembotuser"]);
+      if (!targetId) {
+        await reply(message, "💡 Cú pháp: /themuser @tag hoặc /themuser <UID>\nVí dụ: /themuser 6314752836073016389");
+        return true;
+      }
+      const added = state.addAllowedUser(targetId);
+      await state.flush();
+      if (added) {
+        await reply(message, `✅ ĐÃ CẤP QUYỀN THÀNH CÔNG: Người dùng ${targetId} đã được thêm vào danh sách được phép sử dụng bot!`);
+      } else {
+        await reply(message, `ℹ️ Người dùng ${targetId} đã có sẵn trong danh sách cấp quyền rồi.`);
+      }
+      return true;
+    }
+
+    if (["xoauser", "deluser", "xoabotuser", "removeuser"].includes(command)) {
+      if (!isOperator) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xóa người khỏi danh sách sử dụng bot.");
+        return true;
+      }
+      const targetId = parseUserTarget(message, ["xoauser", "deluser", "xoabotuser", "removeuser"]);
+      if (!targetId) {
+        await reply(message, "💡 Cú pháp: /xoauser @tag hoặc /xoauser <UID>\nVí dụ: /xoauser 6314752836073016389");
+        return true;
+      }
+      const removed = state.removeAllowedUser(targetId);
+      await state.flush();
+      if (removed) {
+        await reply(message, `🗑️ ĐÃ THU HỒI QUYỀN: Người dùng ${targetId} đã bị xóa khỏi danh sách sử dụng bot.`);
+      } else {
+        await reply(message, `ℹ️ Người dùng ${targetId} không có trong danh sách cấp quyền.`);
+      }
+      return true;
+    }
+
+    if (["dsuser", "listuser", "userlist"].includes(command)) {
+      if (!isOperator) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem danh sách người dùng được cấp quyền.");
+        return true;
+      }
+      const users = state.getAllowedUsers();
+      if (!users.length) {
+        await reply(message, `📋 DANH SÁCH NGƯỜI DÙNG ĐƯỢC CẤP QUYỀN: Hiện chưa có tài khoản nào được thêm.\n👉 Dùng lệnh: /themuser @tag hoặc /themuser <UID> để cấp quyền.`);
+      } else {
+        const listText = users.map((u, i) => `${i + 1}. UID: ${u}`).join("\n");
+        await reply(message, `📋 DANH SÁCH NGƯỜI DÙNG ĐƯỢC CẤP QUYỀN (${users.length}):\n${listText}\n\n👉 Dùng /xoauser <UID> để thu hồi quyền.`);
+      }
+      return true;
+    }
+
     if (["ai", "ask", "chat", "gemini"].includes(command)) {
       const prompt = text.replace(COMMAND_RE, "").trim();
       if (!prompt) {
@@ -593,11 +756,14 @@ export function createModeration({ api, config, state, aiService, log = console 
         return true;
       }
 
-      // Nếu nhóm bật chế độ chỉ QTV, chỉ cho phép Trưởng/Phó nhóm
-      if (isGroup && isGroupAdminOnly) {
-        const isUserAdmin = await checkIsAdmin(String(message.threadId), senderId);
-        if (!isUserAdmin) {
-          await reply(message, "🔒 Nhóm hiện đang bật chế độ CHỈ QUẢN TRỊ VIÊN mới được trò chuyện với bot.");
+      if (isGroup) {
+        const check = await canUseBot(senderId);
+        if (!check.allowed) {
+          if (check.reason === "strict") {
+            await reply(message, "🔒 Nhóm hiện đang bật chế độ KHÓA QUYỀN QTV TUYỆT ĐỐI. Kể cả Quản trị viên nhóm cũng không thể dùng bot cho đến khi được Chủ bot cấp quyền qua lệnh /themuser.");
+          } else {
+            await reply(message, "🔒 Nhóm hiện đang bật chế độ CHỈ QUẢN TRỊ VIÊN mới được trò chuyện với bot.");
+          }
           return true;
         }
       }
@@ -627,9 +793,11 @@ export function createModeration({ api, config, state, aiService, log = console 
       const isGroup = message.type === ThreadType.Group;
       const targetGid = String(message.threadId);
       const isPaused = isGroup && Boolean(state?.isGroupDisabled?.(targetGid));
-      const isOnlyQtv = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(targetGid));
+      const isStrict = isGroup && Boolean(state?.isStrictAdminOnly?.(targetGid));
+      const isOnlyQtv = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(targetGid) || isStrict);
+      const allowedCount = state?.getAllowedUsers?.()?.length ?? 0;
       const groupLine = isGroup
-        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}\n- Chế độ chỉ QTV: ${isOnlyQtv ? "🔒 BẬT (/chiqtv để mở cho cả nhóm)" : "🌐 TẮT (/chiqtv để bật)"}`
+        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}\n- Chế độ chỉ QTV: ${isStrict ? "🔒 KHÓA TUYỆT ĐỐI (/khoaqtv)" : isOnlyQtv ? "🔒 BẬT (/chiqtv)" : "🌐 TẮT"}\n- Whitelist người dùng: ${allowedCount} người được cấp quyền`
         : "";
       const aiProvider = aiService?.getProviderName?.() || "Google Gemini Flash (Miễn phí 100%)";
       const aiStatus = aiService?.isConfigured?.() ? `🟢 ĐÃ KÍCH HOẠT (${aiProvider})` : "⚪ Chưa cấu hình";
@@ -639,6 +807,10 @@ export function createModeration({ api, config, state, aiService, log = console 
 
     if (command === "help") {
       await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:
+- /khoaqtv [on/off] : Khóa quyền QTV tuyệt đối (kể cả admin/bot khác cũng không dùng được bot).
+- /themuser @tag/<UID> : Cấp quyền cho người dùng/bot được phép dùng bot.
+- /xoauser @tag/<UID> : Thu hồi quyền sử dụng bot.
+- /dsuser : Xem danh sách người dùng được cấp quyền dùng bot.
 - /railink <URL> <mẫu spin> : Bắt đầu chiến dịch rải link an toàn tới các nhóm.
 - /stoprai : Dừng ngay chiến dịch rải link.
 - /trangthairai : Xem tiến độ rải link, số nhóm đã gửi và thời gian chờ.
