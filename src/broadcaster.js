@@ -125,6 +125,15 @@ export function createBroadcaster({
 
   const joinQueue = [];
 
+  function getMaxSendsPerDay() {
+    if (store.data.customMaxSends && Number.isInteger(store.data.customMaxSends) && store.data.customMaxSends > 0) {
+      return store.data.customMaxSends;
+    }
+    const envVal = Number.parseInt(process.env.MAX_SENDS_PER_DAY || process.env.BROADCAST_MAX_SENDS_PER_DAY, 10);
+    if (Number.isInteger(envVal) && envVal > 0) return envVal;
+    return config.broadcast?.maxSendsPerDay ?? 100;
+  }
+
   function queueGroupInvite(url) {
     return false;
   }
@@ -166,7 +175,7 @@ export function createBroadcaster({
       store.save();
       const sentCount = campaign.items.filter((it) => it.status === "sent" || it.status === "simulated").length;
       await notifyOperators(
-        `🏁 [HOÀN TẤT CHIẾN DỊCH RẢI LINK]\n- Chiến dịch #${campaign.id} đã hoàn tất!\n- Đã gửi thành công: ${sentCount} nhóm\n- Số tin hôm nay: ${store.data.dailyCounter.count}/${config.broadcast?.maxSendsPerDay ?? 50}`
+        `🏁 [HOÀN TẤT CHIẾN DỊCH RẢI LINK]\n- Chiến dịch #${campaign.id} đã hoàn tất!\n- Đã gửi thành công: ${sentCount} nhóm\n- Số tin hôm nay: ${store.data.dailyCounter.count}/${getMaxSendsPerDay()}`
       );
       return;
     }
@@ -178,7 +187,7 @@ export function createBroadcaster({
     if (!store.data.dailyCounter || store.data.dailyCounter.date !== today) {
       store.data.dailyCounter = { date: today, count: 0 };
     }
-    const maxSendsPerDay = config.broadcast?.maxSendsPerDay ?? 50;
+    const maxSendsPerDay = getMaxSendsPerDay();
     if (store.data.dailyCounter.count >= maxSendsPerDay) {
       log.warn?.(`[RẢI LINK] Đã đạt giới hạn an toàn ${maxSendsPerDay} tin/ngày. Tạm dừng chiến dịch đến ngày mai.`);
       campaign.status = "paused_daily_limit";
@@ -333,7 +342,7 @@ export function createBroadcaster({
     const ownId = typeof api.getOwnId === "function" ? String(api.getOwnId()) : String(api.ctx?.uid || "");
     const senderId = String(message.data?.uidFrom || (message.isSelf ? ownId : message.threadId));
 
-    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget|xoatarget|quetnhom|quetlink|danhsachnhom|dsnhom|locnhom|donnhom)(?:\s+([\s\S]*))?$/i);
+    const match = text.match(/^\/(railink|stoprai|joinnhom|trangthairai|themtarget|xoatarget|quetnhom|quetlink|danhsachnhom|dsnhom|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s+([\s\S]*))?$/i);
     if (!match) return false;
 
     if (!isOperator(senderId)) {
@@ -407,7 +416,7 @@ export function createBroadcaster({
         `🚀 ĐÃ KHỞI TẠO CHIẾN DỊCH RẢI LINK #${campaignId}!\n` +
         `- Tổng số nhóm nhận: ${items.length} nhóm\n` +
         `- Giãn cách an toàn: ${minDelay}s - ${maxDelay}s / nhóm (tránh Zalo quét spam)\n` +
-        `- Giới hạn ngày: ${config.broadcast?.maxSendsPerDay ?? 50} tin/ngày\n` +
+        `- Giới hạn ngày: ${getMaxSendsPerDay()} tin/ngày\n` +
         `- Mẫu xem trước ngẫu nhiên:\n"${preview}"\n\n` +
         `Bot bắt đầu rải tự động lác đác từng nhóm... (Gõ /trangthairai để xem tiến độ).`
       );
@@ -435,7 +444,7 @@ export function createBroadcaster({
       const camp = store.data.campaign;
       const totalGroups = store.data.targetGroups.length;
       const todayCount = store.data.dailyCounter?.count ?? 0;
-      const maxSends = config.broadcast?.maxSendsPerDay ?? 50;
+      const maxSends = getMaxSendsPerDay();
       let textRes = `📊 TRẠNG THÁI RẢI LINK:\n- Tổng nhóm mục tiêu: ${totalGroups} nhóm\n- Số tin đã gửi hôm nay: ${todayCount}/${maxSends}\n`;
       if (!camp || camp.status === "stopped" || camp.status === "done") {
         textRes += "- Chiến dịch: Hiện không có chiến dịch nào đang chạy.";
@@ -524,6 +533,36 @@ export function createBroadcaster({
           `🚪 Đã tự động rời ${res.leftGroups.length}/${res.totalChecked} nhóm bị khóa chat:\n${names}\n\nHiện còn ${res.remainingTargets} nhóm sẵn sàng rải link!`
         );
       }
+      return true;
+    }
+
+    if (command === "gioihanrai" || command === "limitrai" || command === "setlimit") {
+      const todayCount = store.data.dailyCounter?.count ?? 0;
+      if (!arg) {
+        await reply(message,
+          `📊 GIỚI HẠN RẢI LINK HIỆN TẠI:\n` +
+          `- Giới hạn tối đa: ${getMaxSendsPerDay()} tin/ngày\n` +
+          `- Đã gửi hôm nay: ${todayCount}/${getMaxSendsPerDay()} tin\n` +
+          `👉 Để thay đổi giới hạn, gõ: /gioihanrai <số_lượng> (Ví dụ: /gioihanrai 100)`
+        );
+        return true;
+      }
+      const newLimit = Number.parseInt(arg.trim(), 10);
+      if (!Number.isInteger(newLimit) || newLimit < 1 || newLimit > 500) {
+        await reply(message, "⚠️ Vui lòng nhập số lượng hợp lệ từ 1 đến 500 (Ví dụ: /gioihanrai 100).");
+        return true;
+      }
+      store.data.customMaxSends = newLimit;
+      if (store.data.campaign && store.data.campaign.status === "paused_daily_limit" && store.data.dailyCounter.count < newLimit) {
+        store.data.campaign.status = "running";
+        store.data.campaign.nextSendAt = clock();
+      }
+      store.save();
+      await reply(message,
+        `✅ ĐÃ CẬP NHẬT GIỚI HẠN RẢI LINK!\n` +
+        `- Giới hạn mới: ${newLimit} tin/ngày\n` +
+        `- Đã gửi hôm nay: ${todayCount}/${newLimit} tin.`
+      );
       return true;
     }
 

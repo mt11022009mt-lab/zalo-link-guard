@@ -642,9 +642,10 @@ export function createModeration({ api, config, state, aiService, log = console 
 - /railink <URL> <mẫu spin> : Bắt đầu chiến dịch rải link an toàn tới các nhóm.
 - /stoprai : Dừng ngay chiến dịch rải link.
 - /trangthairai : Xem tiến độ rải link, số nhóm đã gửi và thời gian chờ.
+- /gioihanrai [số] : Xem hoặc đổi số tin rải tối đa/ngày (mặc định 100 tin).
 - /dsnhom : Xem danh sách các nhóm mục tiêu nhận link.
 - /themtarget <id> : Thêm ID nhóm vào danh sách nhận link (hoặc /xoatarget <id>).
-- /quetnhom : Quét tin nhắn các nhóm để tự động tìm link mời và join nhóm mới.
+- /quetnhom : Đồng bộ tất cả nhóm Zalo bạn đã tham gia vào danh sách rải link.
 - /locnhom : Tự kiểm tra và rời khỏi các nhóm bị khóa chat.
 - /khoachat [on/off] : Khóa chat nhóm trên Zalo (Chỉ QTV mới gửi được tin) hoặc /mochat.
 - /chiqtv [on/off] : Bật/tắt chế độ chỉ cho QTV nhắn tin & gọi AI bot.

@@ -338,7 +338,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 

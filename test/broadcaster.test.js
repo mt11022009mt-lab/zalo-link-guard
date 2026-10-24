@@ -69,7 +69,7 @@ function createTestBroadcaster(t, { targets = ["group-1", "group-2"], configOver
       initialGroupIds: targets,
       minDelaySeconds: 1,
       maxDelaySeconds: 2,
-      maxSendsPerDay: 50,
+      maxSendsPerDay: 100,
       dryRun: false,
       ...configOverrides,
     },
@@ -198,4 +198,27 @@ test("self-sent commands from bot account are supported", async (t) => {
   });
 
   assert.match(sent.at(-1).text, /DANH SÁCH NHÓM MỤC TIÊU/);
+});
+
+test("setting and viewing daily broadcast limit via /gioihanrai", async (t) => {
+  const { broadcaster, sent } = createTestBroadcaster(t, { configOverrides: { maxSendsPerDay: undefined } });
+
+  // 1. View default limit (100)
+  await broadcaster.handleCommand({
+    type: 0,
+    isSelf: false,
+    threadId: OPERATOR,
+    data: { uidFrom: OPERATOR, content: "/gioihanrai" },
+  });
+  assert.match(sent.at(-1).text, /Giới hạn tối đa: 100 tin\/ngày/);
+
+  // 2. Set new limit to 150
+  await broadcaster.handleCommand({
+    type: 0,
+    isSelf: false,
+    threadId: OPERATOR,
+    data: { uidFrom: OPERATOR, content: "/gioihanrai 150" },
+  });
+  assert.equal(broadcaster.store.data.customMaxSends, 150);
+  assert.match(sent.at(-1).text, /Giới hạn mới: 150 tin\/ngày/);
 });
