@@ -80,3 +80,36 @@ test("strictAdminOnly and activeGroups management in ModerationState", (t) => {
   state.deactivateGroup("g1");
   assert.equal(state.isGroupActive("g1", ["cfg-group"]), false);
 });
+
+test("mute, unmute, and expiration in ModerationState", (t) => {
+  let currentTime = 1_000_000;
+  const dir = mkdtempSync(join(tmpdir(), "mod-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const state = new ModerationState(join(dir, "state.json"), {
+    now: () => currentTime,
+    initialData: { version: 1, incidents: [], cases: [], manualKicks: [] },
+  });
+
+  assert.equal(state.isMemberMuted("g1", "user-1"), false);
+  assert.deepEqual(state.getMutedMembers("g1"), []);
+
+  // Mute user-1 for 60 seconds (60,000 ms)
+  state.muteMember({ groupId: "g1", userId: "user-1", mutedBy: "admin-1", durationMs: 60_000, reason: "spam" });
+  assert.equal(state.isMemberMuted("g1", "user-1"), true);
+  assert.equal(state.isMemberMuted("g1", "user-2"), false);
+  assert.equal(state.getMutedMembers("g1").length, 1);
+
+  // Advance time by 30 seconds -> still muted
+  currentTime += 30_000;
+  assert.equal(state.isMemberMuted("g1", "user-1"), true);
+
+  // Unmute early
+  assert.equal(state.unmuteMember("g1", "user-1"), true);
+  assert.equal(state.isMemberMuted("g1", "user-1"), false);
+
+  // Re-mute user-1 for 60 seconds, then advance past expiration
+  state.muteMember({ groupId: "g1", userId: "user-1", mutedBy: "admin-1", durationMs: 60_000 });
+  currentTime += 65_000;
+  assert.equal(state.isMemberMuted("g1", "user-1"), false);
+  assert.deepEqual(state.getMutedMembers("g1"), []);
+});

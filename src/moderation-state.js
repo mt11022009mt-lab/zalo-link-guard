@@ -32,6 +32,9 @@ export class ModerationState {
     if (!Array.isArray(this.data.activeGroups)) {
       this.data.activeGroups = [];
     }
+    if (!Array.isArray(this.data.mutedMembers)) {
+      this.data.mutedMembers = [];
+    }
   }
 
   isGroupDisabled(groupId) {
@@ -161,6 +164,64 @@ export class ModerationState {
     return true;
   }
 
+  muteMember({ groupId, userId, mutedBy, durationMs, reason = "" }) {
+    const gid = String(groupId);
+    const uid = String(userId);
+    const now = this.now();
+    const expiresAt = now + durationMs;
+    if (!Array.isArray(this.data.mutedMembers)) {
+      this.data.mutedMembers = [];
+    }
+    this.data.mutedMembers = this.data.mutedMembers.filter((m) => !(m.groupId === gid && m.userId === uid));
+    const entry = {
+      groupId: gid,
+      userId: uid,
+      mutedBy: String(mutedBy),
+      mutedAt: now,
+      expiresAt,
+      reason: String(reason || ""),
+    };
+    this.data.mutedMembers.push(entry);
+    this.save();
+    return entry;
+  }
+
+  unmuteMember(groupId, userId) {
+    const gid = String(groupId);
+    const uid = String(userId);
+    if (!Array.isArray(this.data.mutedMembers)) return false;
+    const beforeCount = this.data.mutedMembers.length;
+    this.data.mutedMembers = this.data.mutedMembers.filter((m) => !(m.groupId === gid && m.userId === uid));
+    const removed = this.data.mutedMembers.length < beforeCount;
+    if (removed) {
+      this.save();
+    }
+    return removed;
+  }
+
+  isMemberMuted(groupId, userId) {
+    const gid = String(groupId);
+    const uid = String(userId);
+    if (!Array.isArray(this.data.mutedMembers)) return false;
+    const now = this.now();
+    const entry = this.data.mutedMembers.find((m) => m.groupId === gid && m.userId === uid);
+    if (!entry) return false;
+    if (entry.expiresAt <= now) {
+      this.data.mutedMembers = this.data.mutedMembers.filter((m) => m !== entry);
+      this.save();
+      return false;
+    }
+    return true;
+  }
+
+  getMutedMembers(groupId) {
+    const gid = String(groupId);
+    if (!Array.isArray(this.data.mutedMembers)) return [];
+    const now = this.now();
+    this.data.mutedMembers = this.data.mutedMembers.filter((m) => m.expiresAt > now);
+    return this.data.mutedMembers.filter((m) => m.groupId === gid);
+  }
+
   save() {
     if (this.saveHook) {
       const snapshot = structuredClone(this.data);
@@ -181,6 +242,9 @@ export class ModerationState {
 
   prune() {
     const now = this.now();
+    if (Array.isArray(this.data.mutedMembers)) {
+      this.data.mutedMembers = this.data.mutedMembers.filter((item) => item.expiresAt > now);
+    }
     this.data.incidents = this.data.incidents.filter((item) => item.at > now - this.windowMs);
     for (const item of this.data.cases) {
       if (item.status === "pending" && item.expiresAt <= now) item.status = "expired";

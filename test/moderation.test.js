@@ -622,3 +622,76 @@ test("inactive stranger group is completely ignored until owner activates it via
   });
   assert.equal(sent.at(-1).text, "AI: chào bạn");
 });
+
+test("/mute, /unmute, and /dsmute command flows with authorization and validation", async (t) => {
+  const { state, sent, moderation } = fixture(t, {
+    trustedUserIds: [OWNER],
+  });
+
+  // 1. Ordinary member cannot run /mute
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: MEMBER, content: "/mute @Admin 10m", mentions: [{ uid: ADMIN, pos: 6, len: 6, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /Chỉ Quản trị viên nhóm mới có quyền/);
+  assert.equal(state.isMemberMuted(GROUP, ADMIN), false);
+
+  // 2. Admin cannot mute bot itself
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/mute @Bot 10m", mentions: [{ uid: BOT, pos: 6, len: 4, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /Không thể cấm chat tài khoản bot/);
+
+  // 3. Admin cannot mute another admin / owner
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/mute @Owner 10m", mentions: [{ uid: OWNER, pos: 6, len: 6, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /Không thể cấm chat Chủ sở hữu bot/);
+
+  // 4. Admin mutes ordinary member with custom duration (15m)
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/mute @Member 15m", mentions: [{ uid: MEMBER, pos: 6, len: 7, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /ĐÃ CẤM CHAT \(MUTE\) THÀNH CÔNG/);
+  assert.match(sent.at(-1).text, /15 phút/);
+  assert.equal(state.isMemberMuted(GROUP, MEMBER), true);
+
+  // 5. Admin views muted list via /dsmute
+  await moderation.handleCommand(approval("/dsmute", ADMIN));
+  assert.match(sent.at(-1).text, /DANH SÁCH THÀNH VIÊN ĐANG BỊ CẤM CHAT/);
+  assert.match(sent.at(-1).text, new RegExp(MEMBER));
+
+  // 6. Admin unmutes member via /unmute
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/unmute @Member", mentions: [{ uid: MEMBER, pos: 8, len: 7, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /ĐÃ MỞ CHAT \(UNMUTE\) THÀNH CÔNG/);
+  assert.equal(state.isMemberMuted(GROUP, MEMBER), false);
+
+  // 7. /dsmute is now empty
+  await moderation.handleCommand(approval("/dsmute", ADMIN));
+  assert.match(sent.at(-1).text, /không có thành viên nào đang bị cấm chat/);
+
+  // 8. In strict mode (/khoaqtv on), regular admin cannot mute unless whitelisted
+  await moderation.handleCommand(approval("/khoaqtv on", OWNER));
+  assert.equal(state.isStrictAdminOnly(GROUP), true);
+
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: ADMIN, content: "/mute @Member 10m", mentions: [{ uid: MEMBER, pos: 6, len: 7, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /KHÓA QUYỀN QTV TUYỆT ĐỐI/);
+  assert.equal(state.isMemberMuted(GROUP, MEMBER), false);
+
+  // Owner can still mute in strict mode
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: OWNER, content: "/mute @Member 30m", mentions: [{ uid: MEMBER, pos: 6, len: 7, type: 0 }] },
+  });
+  assert.match(sent.at(-1).text, /ĐÃ CẤM CHAT \(MUTE\) THÀNH CÔNG/);
+  assert.equal(state.isMemberMuted(GROUP, MEMBER), true);
+});

@@ -324,12 +324,39 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 
   const isTargetGroup = config.groupIds.includes(String(message.threadId)) || Boolean(state?.isGroupActive?.(message.threadId, config.groupIds));
   if (!isTargetGroup) return; // Chống bật bot bừa bãi: Chỉ xử lý nhóm đã được kích hoạt
+
+  // Kiểm tra thành viên có đang bị cấm chat (Mute) trong nhóm này không
+  const isMuted = state?.isMemberMuted?.(String(message.threadId), String(message.data?.uidFrom));
+  if (isMuted) {
+    const { msgId, cliMsgId, uidFrom } = message.data || {};
+    const details = `thành_viên_bị_mute=${uidFrom} nhóm=${message.threadId} tin=${msgId}`;
+    console.log(`[CẤM CHAT - MUTE] Phát hiện tin nhắn từ ${details} -> Đang tiến hành xóa tức thì...`);
+    try {
+      await api.deleteMessage({
+        type: ThreadType.Group,
+        threadId: message.threadId,
+        data: { msgId, cliMsgId, uidFrom },
+      }, false);
+      console.log(`[ĐÃ XÓA TIN MUTE] Thành công: ${details}`);
+    } catch (err) {
+      if (typeof api.undo === "function") {
+        try {
+          await api.undo({ msgId, cliMsgId }, message.threadId, ThreadType.Group);
+          console.log(`[ĐÃ THU HỒI TIN MUTE] Thành công: ${details}`);
+        } catch (uErr) {
+          console.error(`[LỖI XÓA TIN MUTE] ${details}:`, uErr.message);
+        }
+      }
+    }
+    markSeen(messageKey);
+    return;
+  }
 
   const isImage = isImageMessage(message);
   const links = extractMessageLinks(message);

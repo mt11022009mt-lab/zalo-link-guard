@@ -64,7 +64,72 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam)(?:\s|$)/i;
+
+export function parseDurationMs(input, defaultMinutes = 30) {
+  if (!input || typeof input !== "string" || !input.trim()) {
+    return defaultMinutes * 60 * 1000;
+  }
+  const str = input.trim().toLowerCase();
+  const match = str.match(/^(\d+)\s*(s|m|min|phut|p|h|gio|g|d|ngay)?$/i);
+  if (!match) return defaultMinutes * 60 * 1000;
+  const num = Number.parseInt(match[1], 10);
+  const unit = match[2] || "m";
+  let ms = num * 60 * 1000;
+  if (unit === "s") ms = num * 1000;
+  else if (["m", "min", "phut", "p"].includes(unit)) ms = num * 60 * 1000;
+  else if (["h", "gio", "g"].includes(unit)) ms = num * 60 * 60 * 1000;
+  else if (["d", "ngay"].includes(unit)) ms = num * 24 * 60 * 60 * 1000;
+  if (ms < 60 * 1000) ms = 60 * 1000; // Tối thiểu 1 phút
+  if (ms > 30 * 24 * 60 * 60 * 1000) ms = 30 * 24 * 60 * 60 * 1000; // Tối đa 30 ngày
+  return ms;
+}
+
+export function formatDurationHuman(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} ngày`);
+  if (hours > 0) parts.push(`${hours} giờ`);
+  if (minutes > 0) parts.push(`${minutes} phút`);
+  if (parts.length === 0 || seconds > 0) parts.push(`${seconds} giây`);
+  return parts.join(" ");
+}
+
+export function parseMuteCommand(message) {
+  const text = getCommandText(message);
+  if (!text) return null;
+  const mentions = message.data?.mentions;
+  let targetId = null;
+  let durationStr = "";
+
+  if (Array.isArray(mentions) && mentions.length === 1 && mentions[0].type !== 1) {
+    const mention = mentions[0];
+    const uid = String(mention.uid ?? "").trim();
+    if (/^\d{5,}$/.test(uid)) {
+      targetId = uid;
+      const afterMention = text.slice(Number(mention.pos) + Number(mention.len)).trim();
+      const parts = afterMention.split(/\s+/).filter(Boolean);
+      if (parts.length > 0) durationStr = parts[0];
+    }
+  }
+
+  if (!targetId) {
+    const parts = text.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const cleanUid = parts[1].replace(/^[<@!]+/, "").replace(/[>]+$/, "").trim();
+      if (/^\d{5,}$/.test(cleanUid)) {
+        targetId = cleanUid;
+        if (parts.length >= 3) durationStr = parts[2];
+      }
+    }
+  }
+
+  return targetId ? { targetId, durationStr } : null;
+}
 
 export function parseUserTarget(message, cmdNames = ["themuser", "adduser", "xoauser", "deluser"]) {
   const text = getCommandText(message);
@@ -745,6 +810,119 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
+    if (["mute", "camchat"].includes(command)) {
+      const groupId = String(message.threadId);
+      if (!isGroup) {
+        await reply(message, "Lệnh /mute chỉ có thể sử dụng trong nhóm Zalo.");
+        return true;
+      }
+      const parsed = parseMuteCommand(message);
+      if (!parsed) {
+        await reply(message, "💡 Cú pháp: /mute @thành_viên [thời_gian]\nVí dụ:\n- /mute @tên 15m (cấm 15 phút)\n- /mute @tên 1h (cấm 1 tiếng)\n- /mute @tên (mặc định cấm 30 phút)");
+        return true;
+      }
+      const { targetId, durationStr } = parsed;
+      try {
+        if (isStrictOnly && !isOperator && !state?.isUserAllowed?.(senderId)) {
+          throw new Error("Nhóm đang bật KHÓA QUYỀN QTV TUYỆT ĐỐI. Chỉ Chủ sở hữu hoặc người trong danh sách cấp quyền mới được cấm chat.");
+        }
+        const info = await groupInfo(groupId);
+        if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ Quản trị viên nhóm mới có quyền dùng lệnh cấm chat.");
+        }
+        if (targetId === ownId) {
+          throw new Error("Không thể cấm chat tài khoản bot.");
+        }
+        if (targetId === senderId) {
+          throw new Error("Bạn không thể tự cấm chat chính mình.");
+        }
+        if (config.trustedUserIds?.includes(targetId)) {
+          throw new Error("Không thể cấm chat Chủ sở hữu bot.");
+        }
+        if (isAdmin(info, targetId)) {
+          throw new Error("Không thể cấm chat Quản trị viên (Trưởng/Phó nhóm).");
+        }
+
+        const durationMs = parseDurationMs(durationStr, 30);
+        state.muteMember({
+          groupId,
+          userId: targetId,
+          mutedBy: senderId,
+          durationMs,
+        });
+        await state.flush();
+        const durationText = formatDurationHuman(durationMs);
+        await reply(message, `🔇 ĐÃ CẤM CHAT (MUTE) THÀNH CÔNG!\n👉 Thành viên: ${targetId}\n⏱️ Thời hạn: ${durationText}\n🛡️ Trong thời gian này, mọi tin nhắn của thành viên sẽ bị bot tự động xóa tức thì.`);
+      } catch (error) {
+        await reply(message, `Không thực hiện được: ${error.message}`);
+      }
+      return true;
+    }
+
+    if (["unmute", "mopchat", "bomute"].includes(command)) {
+      const groupId = String(message.threadId);
+      if (!isGroup) {
+        await reply(message, "Lệnh /unmute chỉ có thể sử dụng trong nhóm Zalo.");
+        return true;
+      }
+      const parsed = parseMuteCommand(message);
+      if (!parsed) {
+        await reply(message, "💡 Cú pháp: /unmute @thành_viên hoặc /unmute <UID>");
+        return true;
+      }
+      const { targetId } = parsed;
+      try {
+        if (isStrictOnly && !isOperator && !state?.isUserAllowed?.(senderId)) {
+          throw new Error("Nhóm đang bật KHÓA QUYỀN QTV TUYỆT ĐỐI. Chỉ Chủ sở hữu hoặc người trong danh sách cấp quyền mới được gỡ cấm chat.");
+        }
+        if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+          const info = await groupInfo(groupId);
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ Quản trị viên nhóm mới có quyền gỡ cấm chat.");
+        }
+        const removed = state.unmuteMember(groupId, targetId);
+        await state.flush();
+        if (removed) {
+          await reply(message, `🔊 ĐÃ MỞ CHAT (UNMUTE) THÀNH CÔNG!\n👉 Thành viên ${targetId} đã được mở quyền gửi tin nhắn trong nhóm.`);
+        } else {
+          await reply(message, `ℹ️ Thành viên ${targetId} hiện không nằm trong danh sách bị cấm chat.`);
+        }
+      } catch (error) {
+        await reply(message, `Không thực hiện được: ${error.message}`);
+      }
+      return true;
+    }
+
+    if (["dsmute", "listmute", "dsbicam"].includes(command)) {
+      const groupId = String(message.threadId);
+      if (!isGroup) {
+        await reply(message, "Lệnh /dsmute chỉ có thể sử dụng trong nhóm Zalo.");
+        return true;
+      }
+      try {
+        if (isStrictOnly && !isOperator && !state?.isUserAllowed?.(senderId)) {
+          throw new Error("Nhóm đang bật KHÓA QUYỀN QTV TUYỆT ĐỐI. Chỉ Chủ sở hữu hoặc người trong danh sách cấp quyền mới được xem.");
+        }
+        if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+          const info = await groupInfo(groupId);
+          if (!isAdmin(info, senderId)) throw new Error("Chỉ Quản trị viên nhóm mới có quyền xem danh sách cấm chat.");
+        }
+        const mutedList = state.getMutedMembers(groupId);
+        if (!mutedList.length) {
+          await reply(message, "📋 Hiện tại nhóm không có thành viên nào đang bị cấm chat (mute).");
+        } else {
+          const now = Date.now();
+          const itemsText = mutedList.map((m, idx) => {
+            const remainMs = Math.max(0, m.expiresAt - now);
+            return `${idx + 1}. UID: ${m.userId} | Còn lại: ${formatDurationHuman(remainMs)}`;
+          }).join("\n");
+          await reply(message, `📋 DANH SÁCH THÀNH VIÊN ĐANG BỊ CẤM CHAT (${mutedList.length}):\n${itemsText}\n\n👉 Dùng /unmute @tag để gỡ cấm chat sớm.`);
+        }
+      } catch (error) {
+        await reply(message, `Không thực hiện được: ${error.message}`);
+      }
+      return true;
+    }
+
     if (["ai", "ask", "chat", "gemini"].includes(command)) {
       const prompt = text.replace(COMMAND_RE, "").trim();
       if (!prompt) {
@@ -796,8 +974,9 @@ export function createModeration({ api, config, state, aiService, log = console 
       const isStrict = isGroup && Boolean(state?.isStrictAdminOnly?.(targetGid));
       const isOnlyQtv = isGroup && Boolean(config.adminOnly || state?.isAdminOnly?.(targetGid) || isStrict);
       const allowedCount = state?.getAllowedUsers?.()?.length ?? 0;
+      const mutedCount = isGroup ? (state?.getMutedMembers?.(targetGid)?.length ?? 0) : 0;
       const groupLine = isGroup
-        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}\n- Chế độ chỉ QTV: ${isStrict ? "🔒 KHÓA TUYỆT ĐỐI (/khoaqtv)" : isOnlyQtv ? "🔒 BẬT (/chiqtv)" : "🌐 TẮT"}\n- Whitelist người dùng: ${allowedCount} người được cấp quyền`
+        ? `\n- Bảo vệ nhóm này: ${isPaused ? "⏸️ ĐANG TẮT (/batbot để bật lại)" : "🟢 ĐANG BẬT (/tatbot để tạm tắt)"}\n- Chế độ chỉ QTV: ${isStrict ? "🔒 KHÓA TUYỆT ĐỐI (/khoaqtv)" : isOnlyQtv ? "🔒 BẬT (/chiqtv)" : "🌐 TẮT"}\n- Whitelist người dùng: ${allowedCount} người được cấp quyền\n- Đang bị cấm chat: ${mutedCount} thành viên`
         : "";
       const aiProvider = aiService?.getProviderName?.() || "Google Gemini Flash (Miễn phí 100%)";
       const aiStatus = aiService?.isConfigured?.() ? `🟢 ĐÃ KÍCH HOẠT (${aiProvider})` : "⚪ Chưa cấu hình";
@@ -807,6 +986,9 @@ export function createModeration({ api, config, state, aiService, log = console 
 
     if (command === "help") {
       await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:
+- /mute @tag [thời gian] : Cấm chat thành viên (tự động xóa tin tức thì). Ví dụ: /mute @tên 15m
+- /unmute @tag : Gỡ cấm chat cho thành viên.
+- /dsmute : Xem danh sách thành viên đang bị cấm chat trong nhóm.
 - /khoaqtv [on/off] : Khóa quyền QTV tuyệt đối (kể cả admin/bot khác cũng không dùng được bot).
 - /themuser @tag/<UID> : Cấp quyền cho người dùng/bot được phép dùng bot.
 - /xoauser @tag/<UID> : Thu hồi quyền sử dụng bot.
