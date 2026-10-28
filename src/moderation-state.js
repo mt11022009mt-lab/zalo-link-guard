@@ -3,6 +3,37 @@ import { randomBytes } from "node:crypto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export const DEFAULT_LOCKET_INSTRUCTION = `💛 HƯỚNG DẪN KÍCH HOẠT LOCKET GOLD (VIP) TRỌN ĐỜI 💛
+(Hỗ trợ thiết bị iPhone / iPad)
+
+📌 Bạn chỉ cần thực hiện 5 bước đơn giản dưới đây (chỉ làm 1 lần duy nhất):
+
+Bước 1: Cài đặt ứng dụng
+- Tải ứng dụng Shadowrocket trên App Store (Nếu máy bạn chưa có, vui lòng nhắn lại cho Shop để lấy ID Apple tải miễn phí).
+
+Bước 2: Cài đặt Cấu hình & Tải Chứng chỉ
+- Mở app Shadowrocket ➡️ Vào tab "Cấu hình" (Config).
+- Chọn cấu hình Locket Gold (ví dụ: 10in1.conf).
+- Bấm vào tên cấu hình ➡️ Chọn "Giải mã HTTPS" (HTTPS Decryption).
+- Bật công tắc "Giải mã HTTPS" sang màu xanh.
+- Bấm vào mục "Chứng chỉ" (Certificate) ➡️ Chọn "Cài đặt Chứng chỉ CA vào Hệ thống" (Install CA to System) ➡️ Bấm "Cho phép" (Allow) để tải hồ sơ về máy.
+
+Bước 3: Cài đặt Hồ sơ trên iPhone
+- Mở ứng dụng "Cài đặt" (Settings) của iPhone.
+- Bấm vào mục "Đã tải về hồ sơ" (nằm ngay dưới tên Apple ID của bạn).
+- Bấm "Cài đặt" ở góc trên bên phải ➡️ Nhập mật mã màn hình iPhone (nếu có) ➡️ Xác nhận Cài đặt hoàn tất.
+
+Bước 4: Kích hoạt Tin Cậy Chứng Chỉ (BƯỚC QUAN TRỌNG NHẤT!)
+- Trong "Cài đặt" iPhone ➡️ Vào "Cài đặt chung" (General).
+- Chọn "Giới thiệu" (About) ➡️ Cuộn xuống dưới cùng chọn "Cài đặt tin cậy chứng nhận" (Certificate Trust Settings).
+- Tại mục "Tin cậy hoàn toàn các chứng chỉ gốc", tìm chứng chỉ Shadowrocket ➡️ GẠT CÔNG TẮC SANG MÀU XANH (BẬT) ➡️ Chọn "Tiếp tục".
+
+Bước 5: Kích hoạt VPN & Tận hưởng
+- Mở lại app Shadowrocket ➡️ Ở tab Trang chủ, gạt công tắc "Kết nối" (Connect VPN) sang màu xanh.
+- Mở ứng dụng Locket ➡️ Bạn sẽ thấy biểu tượng Locket Gold xuất hiện với đầy đủ đặc quyền cao cấp (huy hiệu Gold, xem ai xem hồ sơ, phóng to ảnh, đăng ảnh không giới hạn,...).
+
+✨ Chúc bạn có trải nghiệm tuyệt vời với Locket Gold! Nếu gặp khó khăn ở bước nào, hãy nhắn tin trực tiếp cho Shop để được hỗ trợ 1-1 nhé!`;
+
 export class ModerationState {
   constructor(filePath, { now = Date.now, windowHours = 24, initialData, saveHook } = {}) {
     this.filePath = filePath;
@@ -34,6 +65,12 @@ export class ModerationState {
     }
     if (!Array.isArray(this.data.mutedMembers)) {
       this.data.mutedMembers = [];
+    }
+    if (!Array.isArray(this.data.locketOrders)) {
+      this.data.locketOrders = [];
+    }
+    if (typeof this.data.locketInstruction !== "string") {
+      this.data.locketInstruction = "";
     }
   }
 
@@ -251,6 +288,11 @@ export class ModerationState {
     }
     this.data.cases = this.data.cases.filter((item) => item.status === "pending" || item.createdAt > now - 30 * DAY_MS);
     this.data.manualKicks = this.data.manualKicks.filter((item) => item.at > now - 30 * DAY_MS).slice(-200);
+    if (Array.isArray(this.data.locketOrders)) {
+      this.data.locketOrders = this.data.locketOrders.filter(
+        (item) => item.status === "pending" || (item.updatedAt || item.createdAt) > now - 60 * DAY_MS
+      );
+    }
   }
 
   recordViolation({ groupId, userId, messageId, links, displayName }) {
@@ -382,5 +424,125 @@ export class ModerationState {
         entry.groupId !== action.groupId || entry.userId !== action.userId);
     }
     this.save();
+  }
+
+  createLocketOrder({ uid, name, threadId, type }) {
+    this.prune();
+    if (!Array.isArray(this.data.locketOrders)) {
+      this.data.locketOrders = [];
+    }
+    const cleanUid = String(uid).trim();
+    const now = this.now();
+    const existing = this.data.locketOrders.find((o) => String(o.uid) === cleanUid);
+    if (existing) {
+      if (name && name !== "Khách hàng") existing.name = name;
+      existing.updatedAt = now;
+      if (threadId) existing.threadId = String(threadId);
+      if (type !== undefined) existing.type = type;
+      this.save();
+      return { order: existing, isNew: false };
+    }
+    const order = {
+      uid: cleanUid,
+      name: name || "Khách hàng",
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      threadId: threadId ? String(threadId) : null,
+      type: type ?? null,
+    };
+    this.data.locketOrders.push(order);
+    this.save();
+    return { order, isNew: true };
+  }
+
+  getLocketOrder(uid) {
+    this.prune();
+    if (!Array.isArray(this.data.locketOrders)) return null;
+    return this.data.locketOrders.find((o) => String(o.uid) === String(uid).trim()) || null;
+  }
+
+  approveLocketOrder(uid, adminId) {
+    this.prune();
+    if (!Array.isArray(this.data.locketOrders)) {
+      this.data.locketOrders = [];
+    }
+    const cleanUid = String(uid).trim();
+    const now = this.now();
+    let order = this.data.locketOrders.find((o) => String(o.uid) === cleanUid);
+    if (!order) {
+      order = {
+        uid: cleanUid,
+        name: "Khách hàng",
+        status: "approved",
+        createdAt: now,
+        updatedAt: now,
+        approvedBy: String(adminId),
+        approvedAt: now,
+      };
+      this.data.locketOrders.push(order);
+    } else {
+      order.status = "approved";
+      order.approvedBy = String(adminId);
+      order.approvedAt = now;
+      order.updatedAt = now;
+    }
+    this.save();
+    return order;
+  }
+
+  rejectLocketOrder(uid, adminId) {
+    this.prune();
+    if (!Array.isArray(this.data.locketOrders)) {
+      this.data.locketOrders = [];
+    }
+    const cleanUid = String(uid).trim();
+    const now = this.now();
+    let order = this.data.locketOrders.find((o) => String(o.uid) === cleanUid);
+    if (!order) {
+      order = {
+        uid: cleanUid,
+        name: "Khách hàng",
+        status: "rejected",
+        createdAt: now,
+        updatedAt: now,
+        rejectedBy: String(adminId),
+        rejectedAt: now,
+      };
+      this.data.locketOrders.push(order);
+    } else {
+      order.status = "rejected";
+      order.rejectedBy = String(adminId);
+      order.rejectedAt = now;
+      order.updatedAt = now;
+    }
+    this.save();
+    return order;
+  }
+
+  listPendingLocketOrders() {
+    this.prune();
+    if (!Array.isArray(this.data.locketOrders)) return [];
+    return this.data.locketOrders
+      .filter((o) => o.status === "pending")
+      .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  }
+
+  setLocketInstruction(text) {
+    this.data.locketInstruction = String(text || "");
+    this.save();
+    return true;
+  }
+
+  getLocketInstruction() {
+    return (this.data.locketInstruction && this.data.locketInstruction.trim())
+      ? this.data.locketInstruction
+      : DEFAULT_LOCKET_INSTRUCTION;
+  }
+
+  resetLocketInstruction() {
+    this.data.locketInstruction = "";
+    this.save();
+    return true;
   }
 }

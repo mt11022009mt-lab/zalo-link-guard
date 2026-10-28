@@ -29,9 +29,27 @@ Hệ thống bot tự động quản lý nhóm Zalo chuyên nghiệp: **Tự đ�
 | `/vipham` | `/vipham` | Xem danh sách thành viên đang có điểm vi phạm trong nhóm |
 | `/kick` | `/kick @thành_viên` | Kick trực tiếp thành viên vi phạm khỏi nhóm |
 | `/tha` | `/tha @thành_viên` | Xóa toàn bộ điểm vi phạm cho thành viên (hoặc `/xoavipham`) |
+| `/mute` | `/mute @thành_viên [thời_gian]` | Cấm chat thành viên trong nhóm (tự động xóa tin tức thì) |
+| `/unmute` | `/unmute @thành_viên` | Gỡ cấm chat cho thành viên trong nhóm |
+| `/dsmute` | `/dsmute` | Xem danh sách thành viên đang bị cấm chat |
+| `/khoaqtv` | `/khoaqtv [on/off]` | Khóa quyền QTV tuyệt đối (chỉ người trong whitelist mới dùng được bot) |
+| `/themuser` | `/themuser @tag/<UID>` | Cấp quyền dùng bot cho người dùng/bot |
+| `/xoauser` | `/xoauser @tag/<UID>` | Thu hồi quyền sử dụng bot |
+| `/dsuser` | `/dsuser` | Xem danh sách người dùng được cấp quyền dùng bot |
 | `/status` | `/status` hoặc `/botinfo` | Xem phiên bản, trạng thái hoạt động và số nhóm bot đang bảo vệ |
 | `/help` | `/help` | Xem danh sách các lệnh quản trị |
 | `/myid` | `/myid` | Xem UID Zalo của bản thân |
+
+### 6. 💛 Dịch Vụ Up Locket Gold Tự Động
+| Lệnh | Đối tượng | Tác dụng |
+| :--- | :--- | :--- |
+| `locketgold` hoặc `/locketgold` | Khách hàng | Khách nhắn cho bot (trong nhóm hoặc DM riêng), bot gửi ngay UID Zalo của khách để chuyển cho Admin duyệt |
+| `/dslocket` | Quản trị viên | Xem danh sách khách hàng đang chờ duyệt nâng cấp Locket Gold |
+| `/duyetlocket <UID>` | Quản trị viên | Duyệt đơn cho khách hàng; bot tự động gửi trọn bộ cẩm nang hướng dẫn (Shadowrocket) qua tin nhắn riêng |
+| `/tuchoilocket <UID>` | Quản trị viên | Từ chối đơn đăng ký Locket Gold của khách |
+| `/sethuongdan <nội dung>` | Quản trị viên | Cập nhật nội dung bài hướng dẫn Locket Gold gửi cho khách |
+| `/xemhuongdan` | Quản trị viên | Xem nội dung hướng dẫn Locket Gold hiện tại |
+| `/resethuongdan` | Quản trị viên | Đặt lại nội dung hướng dẫn về mẫu chuẩn ban đầu |
 
 ---
 

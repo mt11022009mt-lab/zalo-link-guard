@@ -113,3 +113,57 @@ test("mute, unmute, and expiration in ModerationState", (t) => {
   assert.equal(state.isMemberMuted("g1", "user-1"), false);
   assert.deepEqual(state.getMutedMembers("g1"), []);
 });
+
+test("locket gold orders and instructions management in ModerationState", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "mod-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const state = new ModerationState(join(dir, "state.json"), {
+    initialData: { version: 1, incidents: [], cases: [], manualKicks: [] },
+  });
+
+  // Default instruction
+  assert.match(state.getLocketInstruction(), /HƯỚNG DẪN KÍCH HOẠT LOCKET GOLD/);
+  assert.match(state.getLocketInstruction(), /Shadowrocket/);
+
+  // Custom instruction
+  state.setLocketInstruction("Hướng dẫn tùy chỉnh bước 1 2 3");
+  assert.equal(state.getLocketInstruction(), "Hướng dẫn tùy chỉnh bước 1 2 3");
+  state.resetLocketInstruction();
+  assert.match(state.getLocketInstruction(), /HƯỚNG DẪN KÍCH HOẠT LOCKET GOLD/);
+
+  // Create order
+  assert.deepEqual(state.listPendingLocketOrders(), []);
+  const res1 = state.createLocketOrder({ uid: "user-100", name: "Khách 1" });
+  assert.equal(res1.isNew, true);
+  assert.equal(res1.order.uid, "user-100");
+  assert.equal(res1.order.status, "pending");
+
+  // Duplicate create updates timestamp but isNew is false
+  const res2 = state.createLocketOrder({ uid: "user-100", name: "Khách 1 Đổi Tên" });
+  assert.equal(res2.isNew, false);
+  assert.equal(res2.order.name, "Khách 1 Đổi Tên");
+
+  // Add another order
+  state.createLocketOrder({ uid: "user-200", name: "Khách 2" });
+  assert.equal(state.listPendingLocketOrders().length, 2);
+
+  // Approve user-100
+  const approved = state.approveLocketOrder("user-100", "admin-999");
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.approvedBy, "admin-999");
+
+  // Only user-200 remains pending
+  const pending = state.listPendingLocketOrders();
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].uid, "user-200");
+
+  // Reject user-200
+  const rejected = state.rejectLocketOrder("user-200", "admin-999");
+  assert.equal(rejected.status, "rejected");
+  assert.equal(state.listPendingLocketOrders().length, 0);
+
+  // Approve a direct UID that had no prior order
+  const directApproved = state.approveLocketOrder("user-300", "admin-999");
+  assert.equal(directApproved.status, "approved");
+  assert.equal(state.getLocketOrder("user-300").status, "approved");
+});

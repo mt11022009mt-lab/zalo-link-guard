@@ -695,3 +695,89 @@ test("/mute, /unmute, and /dsmute command flows with authorization and validatio
   assert.match(sent.at(-1).text, /ĐÃ CẤM CHAT \(MUTE\) THÀNH CÔNG/);
   assert.equal(state.isMemberMuted(GROUP, MEMBER), true);
 });
+
+test("locket gold workflow: customer registration, admin approval, rejection, and custom guide", async (t) => {
+  const CUSTOMER = "888888";
+  const { state, sent, moderation, api } = fixture(t, {
+    trustedUserIds: [OWNER],
+  });
+
+  // 1. Customer sends 'locketgold' without slash in group
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: CUSTOMER, dName: "Khách VIP", content: "locketgold" },
+  });
+  assert.match(sent.at(-1).text, /Mã UID Zalo của bạn là: 888888/);
+  assert.match(sent.at(-1).text, /gửi cho Shop\/Admin để được duyệt đơn/);
+  const order = state.getLocketOrder(CUSTOMER);
+  assert.ok(order);
+  assert.equal(order.status, "pending");
+
+  // 2. Customer sends '/locket' in private DM (ThreadType.User / 0)
+  const CUSTOMER_2 = "777777";
+  await moderation.handleCommand({
+    type: 0, isSelf: false, threadId: CUSTOMER_2,
+    data: { uidFrom: CUSTOMER_2, dName: "Khách DM", content: "/locket" },
+  });
+  assert.match(sent.at(-1).text, /Mã UID Zalo của bạn là: 777777/);
+  assert.equal(state.getLocketOrder(CUSTOMER_2).status, "pending");
+
+  // 3. Ordinary member cannot run /dslocket or /duyetlocket
+  await moderation.handleCommand(approval("/dslocket", MEMBER));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot mới có quyền/);
+
+  await moderation.handleCommand(approval(`/duyetlocket ${CUSTOMER}`, MEMBER));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot mới có quyền/);
+
+  // 4. Owner lists pending orders via /dslocket
+  await moderation.handleCommand(approval("/dslocket", OWNER));
+  assert.match(sent.at(-1).text, /DANH SÁCH ĐƠN LOCKET GOLD ĐANG CHỜ DUYỆT \(2\)/);
+  assert.match(sent.at(-1).text, new RegExp(CUSTOMER));
+  assert.match(sent.at(-1).text, new RegExp(CUSTOMER_2));
+
+  // 5. Owner approves CUSTOMER via /duyetlocket
+  const prevSentCount = sent.length;
+  await moderation.handleCommand(approval(`/duyetlocket ${CUSTOMER}`, OWNER));
+
+  // Check that admin receives success reply and customer receives DM
+  const adminReply = sent.find((s) => s.id === GROUP && s.text.includes("ĐÃ DUYỆT THÀNH CÔNG"));
+  assert.ok(adminReply, "Admin should receive confirmation");
+
+  const customerDM = sent.find((s) => s.id === CUSTOMER && s.type === 0);
+  assert.ok(customerDM, "Customer should receive DM guide");
+  assert.match(customerDM.text, /Shadowrocket/);
+  assert.match(customerDM.text, /Giải mã HTTPS/);
+  assert.match(customerDM.text, /Tin cậy hoàn toàn các chứng chỉ gốc/);
+
+  // Order state is now approved
+  assert.equal(state.getLocketOrder(CUSTOMER).status, "approved");
+
+  // 6. If approved customer sends 'locketgold' again, bot detects and re-sends DM guide
+  await moderation.handleCommand({
+    type: 1, isSelf: false, threadId: GROUP,
+    data: { uidFrom: CUSTOMER, dName: "Khách VIP", content: "locketgold" },
+  });
+  assert.match(sent.at(-1).text, /ĐÃ ĐƯỢC DUYỆT LOCKET GOLD TRƯỚC ĐÓ/);
+
+  // 7. Owner rejects CUSTOMER_2 via /tuchoilocket
+  await moderation.handleCommand(approval(`/tuchoilocket ${CUSTOMER_2}`, OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ TỪ CHỐI ĐƠN LOCKET GOLD/);
+  assert.equal(state.getLocketOrder(CUSTOMER_2).status, "rejected");
+
+  // /dslocket is now empty
+  await moderation.handleCommand(approval("/dslocket", OWNER));
+  assert.match(sent.at(-1).text, /không có đơn nào đang chờ duyệt/);
+
+  // 8. Customizing guide: /sethuongdan, /xemhuongdan, /resethuongdan
+  await moderation.handleCommand(approval("/sethuongdan Hướng dẫn mới: Bước 1 tải file", OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT NỘI DUNG HƯỚNG DẪN/);
+
+  await moderation.handleCommand(approval("/xemhuongdan", OWNER));
+  assert.match(sent.at(-1).text, /Hướng dẫn mới: Bước 1 tải file/);
+
+  await moderation.handleCommand(approval("/resethuongdan", OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ ĐẶT LẠI HƯỚNG DẪN VỀ MẪU CHUẨN MẶC ĐỊNH/);
+
+  await moderation.handleCommand(approval("/xemhuongdan", OWNER));
+  assert.match(sent.at(-1).text, /Shadowrocket/);
+});

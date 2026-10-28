@@ -1,5 +1,6 @@
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
+import { DEFAULT_LOCKET_INSTRUCTION } from "./moderation-state.js";
 
 export function getCommandText(message) {
   if (!message || !message.data) return "";
@@ -64,7 +65,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan)(?:\s|$)/i;
 
 export function parseDurationMs(input, defaultMinutes = 30) {
   if (!input || typeof input !== "string" || !input.trim()) {
@@ -143,6 +144,10 @@ export function parseUserTarget(message, cmdNames = ["themuser", "adduser", "xoa
   if (parts.length >= 2) {
     const target = parts[1].replace(/^[<@!]+/, "").replace(/[>]+$/, "").trim();
     if (/^\d{5,}$/.test(target)) return target;
+  }
+  if (message.data?.quote) {
+    const quoteUid = String(message.data.quote.uidFrom || message.data.quote.fromId || message.data.quote.ownerId || "").trim();
+    if (/^\d{5,}$/.test(quoteUid)) return quoteUid;
   }
   return null;
 }
@@ -359,6 +364,42 @@ export function createModeration({ api, config, state, aiService, log = console 
       if (!["batbot", "onbot", "resume", "status", "botinfo", "help"].includes(cmdName)) {
         return false;
       }
+    }
+
+    // 0. Khách hàng đăng ký Locket Gold (/locketgold, locketgold, /locket, locket)
+    const trimmedText = typeof text === "string" ? text.trim() : "";
+    const isLocketCustomer = /^\/?(locketgold|locket|locket\s*gold)$/i.test(trimmedText);
+    if (isLocketCustomer) {
+      const senderName = message.data?.dName || message.data?.displayName || "Khách hàng";
+      const orderResult = state?.createLocketOrder?.({
+        uid: senderId,
+        name: senderName,
+        threadId: message.threadId,
+        type: message.type,
+      });
+      await state?.flush?.();
+
+      let replyMsg = "";
+      if (orderResult && !orderResult.isNew && orderResult.order?.status === "approved") {
+        replyMsg = `💛 CHÀO BẠN! TÀI KHOẢN CỦA BẠN ĐÃ ĐƯỢC DUYỆT LOCKET GOLD TRƯỚC ĐÓ 💛\n\n` +
+          `👉 Mã UID Zalo của bạn: ${senderId}\n\n` +
+          `📩 Bot sẽ gửi lại trọn bộ hướng dẫn kích hoạt Locket Gold qua tin nhắn riêng (DM) cho bạn ngay bây giờ nhé!`;
+        const guide = state?.getLocketInstruction?.() || DEFAULT_LOCKET_INSTRUCTION;
+        try {
+          await api.sendMessage(guide, senderId, ThreadType.User);
+        } catch (dmErr) {
+          log.warn("Không gửi được lại hướng dẫn Locket qua DM:", dmErr.message);
+        }
+      } else {
+        replyMsg = `✨ CHÀO BẠN! CẢM ƠN BẠN ĐÃ ĐĂNG KÝ DỊCH VỤ LOCKET GOLD ✨\n\n` +
+          `👉 Mã UID Zalo của bạn là: ${senderId}\n\n` +
+          `📌 HƯỚNG DẪN TIẾP THEO:\n` +
+          `1. Hãy copy mã UID ở trên gửi cho Shop/Admin để được duyệt đơn nhé!\n` +
+          `2. Ngay sau khi Shop duyệt, bot sẽ TỰ ĐỘNG gửi cẩm nang hướng dẫn cài đặt chi tiết từng bước qua tin nhắn riêng cho bạn.\n\n` +
+          `⏳ Yêu cầu của bạn đã được ghi nhận vào hệ thống chờ duyệt. Chúc bạn một ngày tốt lành!`;
+      }
+      await reply(message, replyMsg);
+      return true;
     }
 
     const isStrictOnly = isGroup && Boolean(state?.isStrictAdminOnly?.(groupId));
@@ -967,6 +1008,109 @@ export function createModeration({ api, config, state, aiService, log = console 
       return true;
     }
 
+    if (command === "duyetlocket") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền duyệt đơn Locket Gold.");
+        return true;
+      }
+      const targetId = parseUserTarget(message, ["duyetlocket"]);
+      if (!targetId) {
+        await reply(message, "💡 Cú pháp: /duyetlocket <UID> hoặc /duyetlocket @tag\nVí dụ: /duyetlocket 6314752836073016389\n👉 Dùng /dslocket để xem danh sách khách đang chờ.");
+        return true;
+      }
+      state.approveLocketOrder(targetId, senderId);
+      await state.flush();
+
+      const guide = state.getLocketInstruction();
+      let dmSent = false;
+      let dmError = "";
+      try {
+        await api.sendMessage(guide, targetId, ThreadType.User);
+        dmSent = true;
+      } catch (err) {
+        dmError = err.message;
+        log.error(`[LOCKET GOLD] Lỗi gửi DM hướng dẫn cho UID ${targetId}:`, err);
+      }
+
+      if (dmSent) {
+        await reply(message, `🎉 ĐÃ DUYỆT THÀNH CÔNG ĐƠN LOCKET GOLD!\n👤 Khách hàng UID: ${targetId}\n📩 Bot đã tự động gửi toàn bộ cẩm nang hướng dẫn từng bước qua tin nhắn riêng (DM) cho khách.`);
+      } else {
+        await reply(message, `⚠️ ĐÃ DUYỆT ĐƠN CHO KHÁCH HÀNG: ${targetId}\n❌ TUY NHIÊN KHÔNG THỂ GỬI TIN NHẮN RIÊNG (DM) CHO KHÁCH:\nLý do: ${dmError}\n👉 Khách hàng có thể đang chặn tin nhắn từ người lạ. Vui lòng kết bạn hoặc gửi hướng dẫn thủ công cho khách nhé!`);
+      }
+      return true;
+    }
+
+    if (command === "tuchoilocket") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền từ chối đơn Locket Gold.");
+        return true;
+      }
+      const targetId = parseUserTarget(message, ["tuchoilocket"]);
+      if (!targetId) {
+        await reply(message, "💡 Cú pháp: /tuchoilocket <UID> hoặc /tuchoilocket @tag\nVí dụ: /tuchoilocket 6314752836073016389");
+        return true;
+      }
+      state.rejectLocketOrder(targetId, senderId);
+      await state.flush();
+      await reply(message, `🗑️ ĐÃ TỪ CHỐI ĐƠN LOCKET GOLD của khách hàng UID: ${targetId}.`);
+      return true;
+    }
+
+    if (["dslocket", "locketlist"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem danh sách đơn Locket Gold.");
+        return true;
+      }
+      const pending = state.listPendingLocketOrders();
+      if (!pending || !pending.length) {
+        await reply(message, "📋 DANH SÁCH ĐƠN LOCKET GOLD: Hiện tại không có đơn nào đang chờ duyệt.");
+        return true;
+      }
+      const items = pending.map((item, idx) => {
+        const timeStr = new Date(item.updatedAt || item.createdAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+        return `${idx + 1}. UID: ${item.uid} | Khách: ${item.name || "Khách"} | Gửi lúc: ${timeStr}`;
+      }).join("\n");
+      await reply(message, `📋 DANH SÁCH ĐƠN LOCKET GOLD ĐANG CHỜ DUYỆT (${pending.length}):\n${items}\n\n👉 Duyệt đơn: /duyetlocket <UID>\n👉 Từ chối đơn: /tuchoilocket <UID>`);
+      return true;
+    }
+
+    if (command === "sethuongdan") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền tùy chỉnh hướng dẫn Locket Gold.");
+        return true;
+      }
+      const newText = text.replace(/^\/sethuongdan\s*/i, "").trim();
+      if (!newText) {
+        await reply(message, "💡 Cú pháp: /sethuongdan <Nội dung hướng dẫn mới>\nVí dụ: /sethuongdan Bước 1: Tải Shadowrocket...");
+        return true;
+      }
+      state.setLocketInstruction(newText);
+      await state.flush();
+      await reply(message, "✅ ĐÃ CẬP NHẬT NỘI DUNG HƯỚNG DẪN LOCKET GOLD THÀNH CÔNG!\nNội dung mới này sẽ được tự động gửi cho khách hàng mỗi khi bạn gõ /duyetlocket.");
+      return true;
+    }
+
+    if (command === "xemhuongdan") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem nội dung hướng dẫn.");
+        return true;
+      }
+      const currentGuide = state.getLocketInstruction();
+      await reply(message, `📖 NỘI DUNG HƯỚNG DẪN LOCKET GOLD HIỆN TẠI:\n\n${currentGuide}`);
+      return true;
+    }
+
+    if (command === "resethuongdan") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền đặt lại hướng dẫn.");
+        return true;
+      }
+      state.resetLocketInstruction();
+      await state.flush();
+      await reply(message, "🔄 ĐÃ ĐẶT LẠI HƯỚNG DẪN VỀ MẪU CHUẨN MẶC ĐỊNH THÀNH CÔNG!");
+      return true;
+    }
+
     if (command === "botinfo" || command === "status") {
       const isGroup = message.type === ThreadType.Group;
       const targetGid = String(message.threadId);
@@ -986,6 +1130,12 @@ export function createModeration({ api, config, state, aiService, log = console 
 
     if (command === "help") {
       await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:
+- /locketgold (hoặc locketgold) : Đăng ký nâng cấp Locket Gold và lấy mã UID gửi Shop.
+- /duyetlocket <UID> : Duyệt đơn và tự động gửi cẩm nang hướng dẫn Locket Gold cho khách.
+- /tuchoilocket <UID> : Từ chối đơn Locket Gold của khách.
+- /dslocket : Xem danh sách đơn Locket Gold đang chờ duyệt.
+- /sethuongdan <nội dung> : Cập nhật nội dung bài hướng dẫn Locket Gold.
+- /xemhuongdan / /resethuongdan : Xem hoặc đặt lại hướng dẫn về mặc định.
 - /mute @tag [thời gian] : Cấm chat thành viên (tự động xóa tin tức thì). Ví dụ: /mute @tên 15m
 - /unmute @tag : Gỡ cấm chat cho thành viên.
 - /dsmute : Xem danh sách thành viên đang bị cấm chat trong nhóm.
