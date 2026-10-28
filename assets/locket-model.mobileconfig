@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+
+        <!-- ① Install custom CA cert so iOS trusts our fake RC server TLS -->
+        <dict>
+            <key>PayloadCertificateFileName</key>
+            <string>LocketGold-CA.crt</string>
+            <key>PayloadContent</key>
+            <data>LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURWekNDQWorZ0F3SUJBZ0lVV1RubXlKYk52YkJYdFQ0cHp6Ym5KVmpmbjdrd0RRWUpLb1pJaHZjTkFRRUwKQlFBd09qRVdNQlFHQTFVRUF3d05URzlqYTJWMFIyOXNaQzFEUVRFVE1CRUdBMVVFQ2d3S1RHOWphMlYwUjI5cwpaREVMTUFrR0ExVUVCaE1DVlZNd0lCY05Nall3TnpBeU1EYzBOalExV2hnUE1qRXlOakEyTURnd056UTJORFZhCk1Eb3hGakFVQmdOVkJBTU1EVXh2WTJ0bGRFZHZiR1F0UTBFeEV6QVJCZ05WQkFvTUNreHZZMnRsZEVkdmJHUXgKQ3pBSkJnTlZCQVlUQWxWVE1JSUJJakFOQmdrcWhraUc5dzBCQVFFRkFBT0NBUThBTUlJQkNnS0NBUUVBMGwrSAp0OWxRR25LTEF2b2cybE5nRTBUdStNVHFDOUlKMnhIcjdZZ2Z5MWtjTUx1Y05ndjJUN2JkazVHWlRGQXNmQkc1CkNXSDhDT2VUZ0hNOHJBZ2x4RzJlK0pXTXdEMnVGSFRzaktFSUtkSmsyS2Y1cExBY1AvT1ZSMWtpdUZrVnUrZGIKc0pLaWlIUFlES3hsYkRxVEROaDFEdEpmMzVHVHp3Qi90bWE5eGxrMVMwanlpWVgzcDcvbk53VzhYN1dpOWJ5RAoyZnd4aWxuWGJmUFdQdDY1S2JtVURITG5jWjg5WE9MdlFOUERRR2pkQWsvZDVXcG5jaTJLWmJUMGFkSFg1emdsCmRYd3ZiSG4ydkR6ZVI4K3NUaURHR2xrbG9rZGZIVDh4VCs2b0hIMGVFQlZWL01XK3lKNUU0c25vTHNRV1lsQ3oKS3dUdC9YMkkxMXY5QWtUUUZRSURBUUFCbzFNd1VUQWRCZ05WSFE0RUZnUVUzb2NnNU5ycStTUDVUYWRRbGoxMQpQNGZxTG1Vd0h3WURWUjBqQkJnd0ZvQVUzb2NnNU5ycStTUDVUYWRRbGoxMVA0ZnFMbVV3RHdZRFZSMFRBUUgvCkJBVXdBd0VCL3pBTkJna3Foa2lHOXcwQkFRc0ZBQU9DQVFFQVFDczdJRW9UYU04c05GeTN1YkZjUzg5T2dxNkMKbEYrM1YxU1B3b2t2STM0ZzBzQnRmUGZDSVZHb2JyWitSVG0rcGx2QTh1eXZLQ3VRWUw5cUQ1eHNkSmkrSnhXUAo1RmFycjAzdWtURkN6UUFTUGZzSGlMNTlWbk90V3B2MU8zN2drM3lOUFB0N0lkWkRvWUQzVGwyU0JtL1lMM2tkCmVBTFlQM1dQeFhjVGVNQnYwSTdja2FXOXZtbWtmenlScWRyNmFQcUlJbHIySEEvb05RSzJVUDlVQWZyNXlBMVcKb0s4M0h3eW0zUVFiWW5abTJWcEdpTzdIbnJjcS9zb3dTYTNHM1BYV0VpVXNsMkpzM3RyeERIVDFYckRueUgxNQowRDg4c1FNczJUK3Fjd2dNMkVFOXUxcGpSTmxUS0dwT3Rad3dqYTFROWErdU5sV1VhSU4zT0pXeVJ3PT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=</data>
+            <key>PayloadDescription</key>
+            <string>LocketGold Root CA</string>
+            <key>PayloadDisplayName</key>
+            <string>LocketGold-CA</string>
+            <key>PayloadIdentifier</key>
+            <string>com.locketgold.ca.cert</string>
+            <key>PayloadType</key>
+            <string>com.apple.security.root</string>
+            <key>PayloadUUID</key>
+            <string>EBD8390A-24B6-431E-B048-17224CD02090</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+
+        <!-- ② DNS over TLS — point to NextDNS profile that rewrites api.revenuecat.com -->
+        <!-- User must add ONE rewrite rule in NextDNS dashboard (instructions below) -->
+        <dict>
+            <key>DNSSettings</key>
+            <dict>
+                <key>DNSProtocol</key>
+                <string>TLS</string>
+                <key>ServerAddresses</key>
+                <array>
+                    <!-- Replace with YOUR NextDNS ID addresses -->
+                    <string>45.90.28.58</string>
+                    <string>45.90.30.58</string>
+                </array>
+                <key>ServerName</key>
+                <!-- Replace YOUR_NEXTDNS_ID with your actual NextDNS profile ID -->
+                <string>9ed13f.dns.nextdns.io</string>
+            </dict>
+            <key>PayloadDescription</key>
+            <string>DNS rewrite for api.revenuecat.com</string>
+            <key>PayloadDisplayName</key>
+            <string>LocketGold DNS</string>
+            <key>PayloadIdentifier</key>
+            <string>com.locketgold.dns</string>
+            <key>PayloadType</key>
+            <string>com.apple.dnsSettings.managed</string>
+            <key>PayloadUUID</key>
+            <string>EF397645-A665-4DC1-A426-C805CD4FC19E</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+
+    </array>
+    <key>PayloadDescription</key>
+    <string>LocketGold — No VPN required. Installs CA cert + DNS rewrite.</string>
+    <key>PayloadDisplayName</key>
+    <string>LocketGold No-VPN</string>
+    <key>PayloadIdentifier</key>
+    <string>com.locketgold.novpn</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>67BB6BED-D367-4B51-8BB9-050A3A08326C</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>

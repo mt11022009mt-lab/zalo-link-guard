@@ -166,4 +166,14 @@ test("locket gold orders and instructions management in ModerationState", (t) =>
   const directApproved = state.approveLocketOrder("user-300", "admin-999");
   assert.equal(directApproved.status, "approved");
   assert.equal(state.getLocketOrder("user-300").status, "approved");
+
+  // Model URL and Video URL management
+  assert.equal(state.getModelUrl(), "https://zalo-link-guard-1.onrender.com/download/model");
+  assert.equal(state.getVideoUrl(), "https://zalo-link-guard-1.onrender.com/download/video");
+
+  state.setModelUrl("https://example.com/custom-model.conf");
+  assert.equal(state.getModelUrl(), "https://example.com/custom-model.conf");
+
+  state.setVideoUrl("https://example.com/custom-video.mp4");
+  assert.equal(state.getVideoUrl(), "https://example.com/custom-video.mp4");
 });

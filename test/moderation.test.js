@@ -743,11 +743,15 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
   const adminReply = sent.find((s) => s.id === GROUP && s.text.includes("ĐÃ DUYỆT THÀNH CÔNG"));
   assert.ok(adminReply, "Admin should receive confirmation");
 
-  const customerDM = sent.find((s) => s.id === CUSTOMER && s.type === 0);
+  const customerDM = sent.find((s) => (s.id === CUSTOMER || s.threadId === CUSTOMER) && (s.type === 0 || s.type === undefined));
   assert.ok(customerDM, "Customer should receive DM guide");
-  assert.match(customerDM.text, /Shadowrocket/);
-  assert.match(customerDM.text, /Giải mã HTTPS/);
-  assert.match(customerDM.text, /Tin cậy hoàn toàn các chứng chỉ gốc/);
+  const rawText = customerDM.text || customerDM.msg;
+  const dmContent = typeof rawText === "object" ? (rawText.msg || "") : String(rawText || "");
+  assert.match(dmContent, /Link tải file Model cấu hình/);
+  assert.match(dmContent, /làm theo từng bước là được nhé/);
+  if (typeof rawText === "object" && rawText.attachments) {
+    assert.ok(rawText.attachments.length > 0, "Should attach the video file");
+  }
 
   // Order state is now approved
   assert.equal(state.getLocketOrder(CUSTOMER).status, "approved");
@@ -768,16 +772,24 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
   await moderation.handleCommand(approval("/dslocket", OWNER));
   assert.match(sent.at(-1).text, /không có đơn nào đang chờ duyệt/);
 
-  // 8. Customizing guide: /sethuongdan, /xemhuongdan, /resethuongdan
-  await moderation.handleCommand(approval("/sethuongdan Hướng dẫn mới: Bước 1 tải file", OWNER));
-  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT NỘI DUNG HƯỚNG DẪN/);
+  // 8. Customizing model file link: /setmodel, /xemmodel
+  await moderation.handleCommand(approval("/setmodel https://drive.google.com/test-model.conf", OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT FILE MODEL \/ LINK TẢI THÀNH CÔNG/);
+  assert.equal(state.getModelUrl(), "https://drive.google.com/test-model.conf");
 
-  await moderation.handleCommand(approval("/xemhuongdan", OWNER));
-  assert.match(sent.at(-1).text, /Hướng dẫn mới: Bước 1 tải file/);
+  await moderation.handleCommand(approval("/xemmodel", OWNER));
+  assert.match(sent.at(-1).text, /https:\/\/drive\.google\.com\/test-model\.conf/);
 
-  await moderation.handleCommand(approval("/resethuongdan", OWNER));
-  assert.match(sent.at(-1).text, /ĐÃ ĐẶT LẠI HƯỚNG DẪN VỀ MẪU CHUẨN MẶC ĐỊNH/);
+  // Reset model to default
+  await moderation.handleCommand(approval("/setmodel default", OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ ĐẶT LẠI LINK FILE MODEL VỀ MẶC ĐỊNH/);
+  assert.equal(state.getModelUrl(), "https://zalo-link-guard-1.onrender.com/download/model");
 
-  await moderation.handleCommand(approval("/xemhuongdan", OWNER));
-  assert.match(sent.at(-1).text, /Shadowrocket/);
+  // 9. Customizing video link: /setvideo, /xemvideo
+  await moderation.handleCommand(approval("/setvideo https://youtu.be/custom-tutorial", OWNER));
+  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT LINK VIDEO HƯỚNG DẪN THÀNH CÔNG/);
+  assert.equal(state.getVideoUrl(), "https://youtu.be/custom-tutorial");
+
+  await moderation.handleCommand(approval("/xemvideo", OWNER));
+  assert.match(sent.at(-1).text, /https:\/\/youtu\.be\/custom-tutorial/);
 });

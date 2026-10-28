@@ -45,9 +45,13 @@ Hệ thống bot tự động quản lý nhóm Zalo chuyên nghiệp: **Tự đ�
 | :--- | :--- | :--- |
 | `locketgold` hoặc `/locketgold` | Khách hàng | Khách nhắn cho bot (trong nhóm hoặc DM riêng), bot gửi ngay UID Zalo của khách để chuyển cho Admin duyệt |
 | `/dslocket` | Quản trị viên | Xem danh sách khách hàng đang chờ duyệt nâng cấp Locket Gold |
-| `/duyetlocket <UID>` | Quản trị viên | Duyệt đơn cho khách hàng; bot tự động gửi trọn bộ cẩm nang hướng dẫn (Shadowrocket) qua tin nhắn riêng |
+| `/duyetlocket <UID>` | Quản trị viên | Duyệt đơn cho khách; bot tự động gửi video hướng dẫn và link tải file model qua tin nhắn riêng |
 | `/tuchoilocket <UID>` | Quản trị viên | Từ chối đơn đăng ký Locket Gold của khách |
-| `/sethuongdan <nội dung>` | Quản trị viên | Cập nhật nội dung bài hướng dẫn Locket Gold gửi cho khách |
+| `/setmodel <link>` | Quản trị viên | Cập nhật link tải file model cấu hình (hoặc `/setmodel default` để dùng link hệ thống) |
+| `/xemmodel` | Quản trị viên | Xem link tải và kiểm tra trạng thái file model hiện tại |
+| `/setvideo <link>` | Quản trị viên | Cập nhật link video hướng dẫn online (hoặc `/setvideo default`) |
+| `/xemvideo` | Quản trị viên | Xem link video và kiểm tra trạng thái file video hiện tại |
+| `/sethuongdan <nội dung>` | Quản trị viên | Cập nhật nội dung văn bản hướng dẫn Locket Gold gửi kèm cho khách |
 | `/xemhuongdan` | Quản trị viên | Xem nội dung hướng dẫn Locket Gold hiện tại |
 | `/resethuongdan` | Quản trị viên | Đặt lại nội dung hướng dẫn về mẫu chuẩn ban đầu |
 

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
 import { DEFAULT_LOCKET_INSTRUCTION } from "./moderation-state.js";
@@ -65,7 +66,7 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo)(?:\s|$)/i;
 
 export function parseDurationMs(input, defaultMinutes = 30) {
   if (!input || typeof input !== "string" || !input.trim()) {
@@ -383,19 +384,38 @@ export function createModeration({ api, config, state, aiService, log = console 
       if (orderResult && !orderResult.isNew && orderResult.order?.status === "approved") {
         replyMsg = `💛 CHÀO BẠN! TÀI KHOẢN CỦA BẠN ĐÃ ĐƯỢC DUYỆT LOCKET GOLD TRƯỚC ĐÓ 💛\n\n` +
           `👉 Mã UID Zalo của bạn: ${senderId}\n\n` +
-          `📩 Bot sẽ gửi lại trọn bộ hướng dẫn kích hoạt Locket Gold qua tin nhắn riêng (DM) cho bạn ngay bây giờ nhé!`;
-        const guide = state?.getLocketInstruction?.() || DEFAULT_LOCKET_INSTRUCTION;
-        try {
-          await api.sendMessage(guide, senderId, ThreadType.User);
-        } catch (dmErr) {
-          log.warn("Không gửi được lại hướng dẫn Locket qua DM:", dmErr.message);
+          `📩 Bot sẽ gửi lại file model và video hướng dẫn qua tin nhắn riêng (DM) cho bạn ngay bây giờ nhé!`;
+        const modelUrl = state?.getModelUrl?.() || "https://zalo-link-guard-1.onrender.com/download/model";
+        const videoUrl = state?.getVideoUrl?.() || "https://zalo-link-guard-1.onrender.com/download/video";
+        const videoPath = state?.getVideoPath?.();
+        const customerMsg = `💛 ĐÂY LÀ FILE MODEL VÀ VIDEO HƯỚNG DẪN LOCKET GOLD CỦA BẠN: 💛\n\n` +
+          `📥 Link tải file Model cấu hình:\n👉 ${modelUrl}\n\n` +
+          `🎬 Bạn tải file model ở trên về, sau đó xem video và làm theo từng bước là được nhé!\n\n` +
+          `✨ Chúc bạn có trải nghiệm tuyệt vời! Nếu cần hỗ trợ thêm, hãy nhắn tin trực tiếp cho Shop nhé!`;
+
+        let dmSent = false;
+        if (videoPath && existsSync(videoPath)) {
+          try {
+            await api.sendMessage({ msg: customerMsg, attachments: [videoPath] }, senderId, ThreadType.User);
+            dmSent = true;
+          } catch (e) {
+            log.warn?.("[LOCKET GOLD] Gửi kèm file video thất bại, chuyển sang link:", e.message);
+          }
+        }
+        if (!dmSent) {
+          try {
+            const fullMsg = `${customerMsg}\n\n▶️ Link xem video online:\n👉 ${videoUrl}`;
+            await api.sendMessage(fullMsg, senderId, ThreadType.User);
+          } catch (dmErr) {
+            log.warn?.("Không gửi được lại video Locket qua DM:", dmErr.message);
+          }
         }
       } else {
         replyMsg = `✨ CHÀO BẠN! CẢM ƠN BẠN ĐÃ ĐĂNG KÝ DỊCH VỤ LOCKET GOLD ✨\n\n` +
           `👉 Mã UID Zalo của bạn là: ${senderId}\n\n` +
           `📌 HƯỚNG DẪN TIẾP THEO:\n` +
           `1. Hãy copy mã UID ở trên gửi cho Shop/Admin để được duyệt đơn nhé!\n` +
-          `2. Ngay sau khi Shop duyệt, bot sẽ TỰ ĐỘNG gửi cẩm nang hướng dẫn cài đặt chi tiết từng bước qua tin nhắn riêng cho bạn.\n\n` +
+          `2. Ngay sau khi Shop duyệt, bot sẽ TỰ ĐỘNG gửi file model và video hướng dẫn chi tiết qua tin nhắn riêng cho bạn.\n\n` +
           `⏳ Yêu cầu của bạn đã được ghi nhận vào hệ thống chờ duyệt. Chúc bạn một ngày tốt lành!`;
       }
       await reply(message, replyMsg);
@@ -1021,22 +1041,126 @@ export function createModeration({ api, config, state, aiService, log = console 
       state.approveLocketOrder(targetId, senderId);
       await state.flush();
 
-      const guide = state.getLocketInstruction();
+      const modelUrl = state.getModelUrl ? state.getModelUrl() : "https://zalo-link-guard-1.onrender.com/download/model";
+      const videoUrl = state.getVideoUrl ? state.getVideoUrl() : "https://zalo-link-guard-1.onrender.com/download/video";
+      const videoPath = state.getVideoPath ? state.getVideoPath() : null;
+
+      const customerMsg = `💛 ĐƠN LOCKET GOLD CỦA BẠN ĐÃ ĐƯỢC DUYỆT THÀNH CÔNG! 💛\n\n` +
+        `📥 Link tải file Model cấu hình:\n👉 ${modelUrl}\n\n` +
+        `🎬 Video hướng dẫn chi tiết đã được gửi kèm bên dưới.\n` +
+        `👉 Bạn chỉ cần tải file model ở trên về, sau đó mở video và làm theo từng bước là được nhé! Rất nhanh và đơn giản.\n\n` +
+        `✨ Chúc bạn có trải nghiệm tuyệt vời! Nếu gặp khó khăn bước nào, hãy nhắn tin trực tiếp cho Shop để được hỗ trợ nhé!`;
+
       let dmSent = false;
       let dmError = "";
-      try {
-        await api.sendMessage(guide, targetId, ThreadType.User);
-        dmSent = true;
-      } catch (err) {
-        dmError = err.message;
-        log.error(`[LOCKET GOLD] Lỗi gửi DM hướng dẫn cho UID ${targetId}:`, err);
+      const hasLocalVideo = videoPath && existsSync(videoPath);
+
+      // Thử gửi kèm file video nếu có sẵn
+      if (hasLocalVideo) {
+        try {
+          await api.sendMessage({
+            msg: customerMsg,
+            attachments: [videoPath],
+          }, targetId, ThreadType.User);
+          dmSent = true;
+        } catch (attErr) {
+          log.warn?.(`[LOCKET GOLD] Gửi kèm file video cho UID ${targetId} thất bại (${attErr.message}), chuyển sang gửi link:`);
+        }
+      }
+
+      // Nếu không có file video cục bộ hoặc gửi file thất bại, gửi tin nhắn kèm link xem online
+      if (!dmSent) {
+        const fullMsg = `${customerMsg}\n\n▶️ Link xem video hướng dẫn online:\n👉 ${videoUrl}`;
+        try {
+          await api.sendMessage(fullMsg, targetId, ThreadType.User);
+          dmSent = true;
+        } catch (err) {
+          dmError = err.message;
+          log.error?.(`[LOCKET GOLD] Lỗi gửi DM cho UID ${targetId}:`, err);
+        }
       }
 
       if (dmSent) {
-        await reply(message, `🎉 ĐÃ DUYỆT THÀNH CÔNG ĐƠN LOCKET GOLD!\n👤 Khách hàng UID: ${targetId}\n📩 Bot đã tự động gửi toàn bộ cẩm nang hướng dẫn từng bước qua tin nhắn riêng (DM) cho khách.`);
+        await reply(message, `🎉 ĐÃ DUYỆT THÀNH CÔNG ĐƠN LOCKET GOLD!\n👤 Khách hàng UID: ${targetId}\n📩 Bot đã tự động gửi video và file model qua tin nhắn riêng (DM) cho khách.`);
       } else {
-        await reply(message, `⚠️ ĐÃ DUYỆT ĐƠN CHO KHÁCH HÀNG: ${targetId}\n❌ TUY NHIÊN KHÔNG THỂ GỬI TIN NHẮN RIÊNG (DM) CHO KHÁCH:\nLý do: ${dmError}\n👉 Khách hàng có thể đang chặn tin nhắn từ người lạ. Vui lòng kết bạn hoặc gửi hướng dẫn thủ công cho khách nhé!`);
+        await reply(message, `⚠️ ĐÃ DUYỆT ĐƠN CHO KHÁCH HÀNG: ${targetId}\n❌ TUY NHIÊN KHÔNG THỂ GỬI TIN NHẮN RIÊNG (DM) CHO KHÁCH:\nLý do: ${dmError}\n👉 Khách hàng có thể đang chặn tin nhắn từ người lạ. Vui lòng kết bạn hoặc gửi thủ công cho khách nhé!`);
       }
+      return true;
+    }
+
+    if (["setmodel", "capnhatmodel"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật file model.");
+        return true;
+      }
+      let newLink = text.replace(/^\/(?:setmodel|capnhatmodel)\s*/i, "").trim();
+      if (!newLink && message.data) {
+        if (typeof message.data.href === "string") newLink = message.data.href;
+        else if (typeof message.data.url === "string") newLink = message.data.url;
+        else if (typeof message.data.fileUrl === "string") newLink = message.data.fileUrl;
+      }
+
+      if (!newLink) {
+        await reply(message, `💡 Cú pháp: /setmodel <Link tải file model>\nVí dụ: /setmodel https://drive.google.com/...\n👉 Hoặc gõ: /setmodel default để dùng link tải mặc định của hệ thống (${state.getModelUrl()}).`);
+        return true;
+      }
+
+      if (newLink.toLowerCase() === "default" || newLink.toLowerCase() === "reset") {
+        state.setModelUrl("https://zalo-link-guard-1.onrender.com/download/model");
+        await state.flush();
+        await reply(message, "🔄 ĐÃ ĐẶT LẠI LINK FILE MODEL VỀ MẶC ĐỊNH HỆ THỐNG:\n👉 https://zalo-link-guard-1.onrender.com/download/model");
+        return true;
+      }
+
+      state.setModelUrl(newLink);
+      await state.flush();
+      await reply(message, `✅ ĐÃ CẬP NHẬT FILE MODEL / LINK TẢI THÀNH CÔNG!\n👉 Link tải mới: ${newLink}\n\nKhi bạn duyệt đơn bằng lệnh /duyetlocket, bot sẽ tự động gửi link này kèm video cho khách hàng.`);
+      return true;
+    }
+
+    if (command === "xemmodel") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem thông tin model.");
+        return true;
+      }
+      const modelUrl = state.getModelUrl ? state.getModelUrl() : "https://zalo-link-guard-1.onrender.com/download/model";
+      const modelPath = state.getModelPath ? state.getModelPath() : "";
+      const exists = modelPath && existsSync(modelPath);
+      await reply(message, `📥 THÔNG TIN FILE MODEL CẤU HÌNH LOCKET GOLD:\n- Link tải gửi cho khách: ${modelUrl}\n- File cục bộ trên máy chủ: ${modelPath} (${exists ? "✅ Có sẵn" : "❌ Chưa có"})\n\n👉 Dùng /setmodel <link> để cập nhật link tải mới.`);
+      return true;
+    }
+
+    if (["setvideo", "capnhatvideo"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật video.");
+        return true;
+      }
+      const newLink = text.replace(/^\/(?:setvideo|capnhatvideo)\s*/i, "").trim();
+      if (!newLink) {
+        await reply(message, `💡 Cú pháp: /setvideo <Link xem video online>\nVí dụ: /setvideo https://youtu.be/...\n👉 Hoặc gõ: /setvideo default để dùng link video mặc định.`);
+        return true;
+      }
+      if (newLink.toLowerCase() === "default" || newLink.toLowerCase() === "reset") {
+        state.setVideoUrl("https://zalo-link-guard-1.onrender.com/download/video");
+        await state.flush();
+        await reply(message, "🔄 ĐÃ ĐẶT LẠI LINK VIDEO VỀ MẶC ĐỊNH:\n👉 https://zalo-link-guard-1.onrender.com/download/video");
+        return true;
+      }
+      state.setVideoUrl(newLink);
+      await state.flush();
+      await reply(message, `✅ ĐÃ CẬP NHẬT LINK VIDEO HƯỚNG DẪN THÀNH CÔNG!\n👉 Link video mới: ${newLink}`);
+      return true;
+    }
+
+    if (command === "xemvideo") {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem thông tin video.");
+        return true;
+      }
+      const videoUrl = state.getVideoUrl ? state.getVideoUrl() : "https://zalo-link-guard-1.onrender.com/download/video";
+      const videoPath = state.getVideoPath ? state.getVideoPath() : "";
+      const exists = videoPath && existsSync(videoPath);
+      await reply(message, `🎬 THÔNG TIN VIDEO HƯỚNG DẪN LOCKET GOLD:\n- Link video online: ${videoUrl}\n- File video trên máy chủ: ${videoPath} (${exists ? "✅ Có sẵn" : "❌ Chưa có"})\n\n👉 Dùng /setvideo <link> để cập nhật link video mới.`);
       return true;
     }
 
@@ -1131,11 +1255,13 @@ export function createModeration({ api, config, state, aiService, log = console 
     if (command === "help") {
       await reply(message, `📖 CÁC LỆNH QUẢN TRỊ VIÊN & TIỆN ÍCH:
 - /locketgold (hoặc locketgold) : Đăng ký nâng cấp Locket Gold và lấy mã UID gửi Shop.
-- /duyetlocket <UID> : Duyệt đơn và tự động gửi cẩm nang hướng dẫn Locket Gold cho khách.
+- /duyetlocket <UID> : Duyệt đơn, tự động gửi video và file model cho khách.
 - /tuchoilocket <UID> : Từ chối đơn Locket Gold của khách.
 - /dslocket : Xem danh sách đơn Locket Gold đang chờ duyệt.
-- /sethuongdan <nội dung> : Cập nhật nội dung bài hướng dẫn Locket Gold.
-- /xemhuongdan / /resethuongdan : Xem hoặc đặt lại hướng dẫn về mặc định.
+- /setmodel <link> : Cập nhật link tải file model cấu hình (hoặc /setmodel default).
+- /xemmodel : Xem link tải và trạng thái file model hiện tại.
+- /setvideo <link> : Cập nhật link xem video hướng dẫn online (hoặc /setvideo default).
+- /xemvideo : Xem link video hiện tại.
 - /mute @tag [thời gian] : Cấm chat thành viên (tự động xóa tin tức thì). Ví dụ: /mute @tên 15m
 - /unmute @tag : Gỡ cấm chat cho thành viên.
 - /dsmute : Xem danh sách thành viên đang bị cấm chat trong nhóm.

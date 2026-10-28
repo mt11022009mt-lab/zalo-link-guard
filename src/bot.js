@@ -1,3 +1,4 @@
+import { existsSync, statSync, createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -79,6 +80,39 @@ const server = createServer(async (req, res) => {
       res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
       return res.end(JSON.stringify({ error: e.message }));
     }
+  }
+
+  if (req.url === "/download/model" || req.url === "/model") {
+    const modelPath = (state && typeof state.getModelPath === "function")
+      ? state.getModelPath()
+      : resolve(process.cwd(), "assets", "locket-model.mobileconfig");
+    if (existsSync(modelPath)) {
+      const stat = statSync(modelPath);
+      res.writeHead(200, {
+        "Content-Type": "application/x-apple-aspen-config",
+        "Content-Disposition": 'attachment; filename="locketgold.mobileconfig"',
+        "Content-Length": stat.size,
+      });
+      return createReadStream(modelPath).pipe(res);
+    }
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("File model chưa được tải lên máy chủ.");
+  }
+
+  if (req.url === "/download/video" || req.url === "/video") {
+    const videoPath = (state && typeof state.getVideoPath === "function")
+      ? state.getVideoPath()
+      : resolve(process.cwd(), "assets", "locket-video.mp4");
+    if (existsSync(videoPath)) {
+      const stat = statSync(videoPath);
+      res.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Content-Length": stat.size,
+      });
+      return createReadStream(videoPath).pipe(res);
+    }
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    return res.end("File video chưa được tải lên máy chủ.");
   }
 
   if (req.url === "/debug" || req.url === "/status") {
@@ -324,7 +358,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 

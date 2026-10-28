@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -71,6 +72,18 @@ export class ModerationState {
     }
     if (typeof this.data.locketInstruction !== "string") {
       this.data.locketInstruction = "";
+    }
+    if (typeof this.data.locketModelUrl !== "string") {
+      this.data.locketModelUrl = "https://zalo-link-guard-1.onrender.com/download/model";
+    }
+    if (typeof this.data.locketVideoUrl !== "string") {
+      this.data.locketVideoUrl = "https://zalo-link-guard-1.onrender.com/download/video";
+    }
+    if (typeof this.data.locketModelPath !== "string") {
+      this.data.locketModelPath = "";
+    }
+    if (typeof this.data.locketVideoPath !== "string") {
+      this.data.locketVideoPath = "";
     }
   }
 
@@ -544,5 +557,53 @@ export class ModerationState {
     this.data.locketInstruction = "";
     this.save();
     return true;
+  }
+
+  setModelUrl(url) {
+    this.data.locketModelUrl = String(url || "").trim();
+    this.save();
+    return this.data.locketModelUrl;
+  }
+
+  getModelUrl() {
+    return (this.data.locketModelUrl && this.data.locketModelUrl.trim())
+      ? this.data.locketModelUrl.trim()
+      : "https://zalo-link-guard-1.onrender.com/download/model";
+  }
+
+  setVideoUrl(url) {
+    this.data.locketVideoUrl = String(url || "").trim();
+    this.save();
+    return this.data.locketVideoUrl;
+  }
+
+  getVideoUrl() {
+    return (this.data.locketVideoUrl && this.data.locketVideoUrl.trim())
+      ? this.data.locketVideoUrl.trim()
+      : "https://zalo-link-guard-1.onrender.com/download/video";
+  }
+
+  setModelPath(filePath) {
+    this.data.locketModelPath = String(filePath || "").trim();
+    this.save();
+    return this.data.locketModelPath;
+  }
+
+  getModelPath() {
+    return (this.data.locketModelPath && this.data.locketModelPath.trim())
+      ? this.data.locketModelPath.trim()
+      : resolve(process.cwd(), "assets", "locket-model.mobileconfig");
+  }
+
+  setVideoPath(filePath) {
+    this.data.locketVideoPath = String(filePath || "").trim();
+    this.save();
+    return this.data.locketVideoPath;
+  }
+
+  getVideoPath() {
+    return (this.data.locketVideoPath && this.data.locketVideoPath.trim())
+      ? this.data.locketVideoPath.trim()
+      : resolve(process.cwd(), "assets", "locket-video.mp4");
   }
 }
