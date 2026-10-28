@@ -47,6 +47,9 @@ Hệ thống bot tự động quản lý nhóm Zalo chuyên nghiệp: **Tự đ�
 | `/dslocket` | Quản trị viên | Xem danh sách khách hàng đang chờ duyệt nâng cấp Locket Gold |
 | `/duyetlocket <UID>` | Quản trị viên | Duyệt đơn cho khách; bot tự động gửi video hướng dẫn và link cấu hình (hướng dẫn khách sao chép link) qua tin nhắn riêng |
 | `/tuchoilocket <UID>` | Quản trị viên | Từ chối đơn đăng ký Locket Gold của khách |
+| `/upvideo [link]` | Quản trị viên | Tải lên video hướng dẫn mới (gửi video kèm caption `/upvideo` hoặc dán link tải) |
+| `/upload` / `/webup` | Quản trị viên | Lấy link web giao diện tải lên video & model trực tiếp từ điện thoại |
+| `/upmodel [link]` | Quản trị viên | Tải lên file cấu hình model mới (.conf / .mobileconfig) |
 | `/setmodel <link>` | Quản trị viên | Cập nhật link cấu hình Locket Gold để khách sao chép (hoặc `/setmodel default` để dùng link hệ thống) |
 | `/xemmodel` | Quản trị viên | Xem link cấu hình Locket Gold hiện tại |
 | `/setvideo <link>` | Quản trị viên | Cập nhật link video hướng dẫn online (hoặc `/setvideo default`) |

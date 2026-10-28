@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { ThreadType } from "zca-js";
 import { getVerifiedGroupInfo, isGroupAdmin as isAdmin } from "./group-roles.js";
 import { DEFAULT_LOCKET_INSTRUCTION } from "./moderation-state.js";
@@ -66,7 +67,102 @@ function findSlashCommandInObject(obj) {
 }
 
 
-const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo)(?:\s|$)/i;
+const COMMAND_RE = /^\/(kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|botinfo|status|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo|upvideo|uploadvideo|taivideo|upmodel|taimodel|upload|webup|trangup)(?:\s|$)/i;
+
+export function normalizeDownloadUrl(url) {
+  if (!url || typeof url !== "string") return url;
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) {
+    return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+  }
+  return url;
+}
+
+export function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+}
+
+export async function downloadFileTo(url, targetPath) {
+  const normUrl = normalizeDownloadUrl(url);
+  const res = await fetch(normUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  writeFileSync(targetPath, buffer);
+  return buffer.length;
+}
+
+export function extractMediaUrlFromMessage(message) {
+  if (!message || !message.data) return null;
+  const d = message.data;
+
+  for (const k of ["href", "url", "fileUrl", "file_url", "directUrl", "downloadUrl", "link"]) {
+    if (typeof d[k] === "string" && /^https?:\/\//i.test(d[k].trim())) {
+      return d[k].trim();
+    }
+  }
+
+  if (d.content && typeof d.content === "object") {
+    for (const k of ["href", "url", "fileUrl", "file_url", "link", "hdUrl", "thumbUrl"]) {
+      if (typeof d.content[k] === "string" && /^https?:\/\//i.test(d.content[k].trim())) {
+        return d.content[k].trim();
+      }
+    }
+  }
+
+  if (typeof d.content === "string") {
+    const trimmed = d.content.trim();
+    if (/^https?:\/\/\S+/i.test(trimmed) && !trimmed.startsWith("/")) {
+      return trimmed;
+    }
+    if (trimmed.startsWith("{")) {
+      try {
+        const p = JSON.parse(trimmed);
+        for (const k of ["href", "url", "fileUrl", "file_url", "link"]) {
+          if (typeof p[k] === "string" && /^https?:\/\//i.test(p[k].trim())) return p[k].trim();
+        }
+      } catch {}
+    }
+  }
+
+  if (typeof d.params === "string" && d.params.trim().startsWith("{")) {
+    try {
+      const p = JSON.parse(d.params);
+      for (const k of ["href", "url", "fileUrl", "file_url", "downloadUrl"]) {
+        if (typeof p[k] === "string" && /^https?:\/\//i.test(p[k].trim())) return p[k].trim();
+      }
+    } catch {}
+  }
+
+  if (d.quote) {
+    const q = d.quote;
+    for (const k of ["href", "url", "fileUrl", "file_url"]) {
+      if (typeof q[k] === "string" && /^https?:\/\//i.test(q[k].trim())) return q[k].trim();
+    }
+    if (q.content && typeof q.content === "object") {
+      for (const k of ["href", "url", "fileUrl"]) {
+        if (typeof q.content[k] === "string" && /^https?:\/\//i.test(q.content[k].trim())) return q.content[k].trim();
+      }
+    }
+    if (typeof q.params === "string" && q.params.trim().startsWith("{")) {
+      try {
+        const qp = JSON.parse(q.params);
+        for (const k of ["href", "url", "fileUrl"]) {
+          if (typeof qp[k] === "string" && /^https?:\/\//i.test(qp[k].trim())) return qp[k].trim();
+        }
+      } catch {}
+    }
+  }
+
+  return null;
+}
 
 export function parseDurationMs(input, defaultMinutes = 30) {
   if (!input || typeof input !== "string" || !input.trim()) {
@@ -1160,7 +1256,97 @@ export function createModeration({ api, config, state, aiService, log = console 
       const videoUrl = state.getVideoUrl ? state.getVideoUrl() : "https://zalo-link-guard-1.onrender.com/download/video";
       const videoPath = state.getVideoPath ? state.getVideoPath() : "";
       const exists = videoPath && existsSync(videoPath);
-      await reply(message, `🎬 THÔNG TIN VIDEO HƯỚNG DẪN LOCKET GOLD:\n- Link video online: ${videoUrl}\n- File video trên máy chủ: ${videoPath} (${exists ? "✅ Có sẵn" : "❌ Chưa có"})\n\n👉 Dùng /setvideo <link> để cập nhật link video mới.`);
+      await reply(message, `🎬 THÔNG TIN VIDEO HƯỚNG DẪN LOCKET GOLD:\n- Link video online: ${videoUrl}\n- File video trên máy chủ: ${videoPath} (${exists ? "✅ Có sẵn" : "❌ Chưa có"})\n\n👉 Dùng /upvideo hoặc /setvideo <link> để cập nhật video mới.`);
+      return true;
+    }
+
+    if (["upvideo", "uploadvideo", "taivideo"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật video.");
+        return true;
+      }
+      let targetUrl = text.replace(/^\/(?:upvideo|uploadvideo|taivideo)\s*/i, "").trim();
+      if (!targetUrl) {
+        targetUrl = extractMediaUrlFromMessage(message);
+      }
+
+      if (!targetUrl) {
+        await reply(message, `🎬 CÁCH CẬP NHẬT VIDEO HƯỚNG DẪN MỚI CHO BOT:
+
+1. Gửi video trực tiếp qua Zalo cho bot kèm chú thích (caption): /upvideo (hoặc reply tin nhắn video rồi gõ /upvideo).
+2. Gõ lệnh kèm link tải: /upvideo <link tải file .mp4>
+3. Mở trang Web Upload trên điện thoại/máy tính:
+👉 https://zalo-link-guard-1.onrender.com/upload
+4. Hoặc gõ /setvideo <link> nếu muốn dùng link xem online (YouTube, TikTok, Drive...).`);
+        return true;
+      }
+
+      await reply(message, "⏳ Đang tải và xử lý video mới, vui lòng chờ trong giây lát...");
+      try {
+        const targetPath = resolve(process.cwd(), "assets", "locket-video.mp4");
+        const size = await downloadFileTo(targetUrl, targetPath);
+        state.setVideoPath(targetPath);
+        state.setVideoUrl("https://zalo-link-guard-1.onrender.com/download/video");
+        await state.flush();
+        await reply(message, `🎉 ĐÃ TẢI VÀ CẬP NHẬT VIDEO MỚI THÀNH CÔNG!\n📁 Dung lượng: ${formatBytes(size)}\n👉 Video này sẽ được tự động gửi kèm cho khách khi bạn duyệt đơn qua lệnh /duyetlocket.`);
+      } catch (err) {
+        // Nếu không tải được direct stream, lưu link online
+        state.setVideoUrl(targetUrl);
+        await state.flush();
+        await reply(message, `⚠️ Không thể tải trực tiếp file từ link (${err.message}).\n✅ Bot đã chuyển sang lưu làm link video xem online:\n👉 ${targetUrl}`);
+      }
+      return true;
+    }
+
+    if (["upload", "webup", "trangup"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền truy cập trang tải lên.");
+        return true;
+      }
+      await reply(message, `🌐 TRANG WEB TẢI LÊN VIDEO & MODEL CẤU HÌNH LOCKET GOLD:
+
+👉 https://zalo-link-guard-1.onrender.com/upload
+
+📱 Sếp chỉ cần mở link trên bằng trình duyệt điện thoại (Safari / Chrome) hoặc máy tính:
+- Chọn video từ Album ảnh để tải lên làm video hướng dẫn mới.
+- Hoặc chọn file cấu hình (.conf / .mobileconfig) để cập nhật model mới.
+- Bot sẽ tự động lưu và gửi cho khách ngay lập tức!`);
+      return true;
+    }
+
+    if (["upmodel", "taimodel"].includes(command)) {
+      if (!isOperator && !state?.isUserAllowed?.(senderId)) {
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật file model.");
+        return true;
+      }
+      let targetUrl = text.replace(/^\/(?:upmodel|taimodel)\s*/i, "").trim();
+      if (!targetUrl) {
+        targetUrl = extractMediaUrlFromMessage(message);
+      }
+      if (!targetUrl) {
+        await reply(message, `📥 CÁCH CẬP NHẬT FILE MODEL / CẤU HÌNH MỚI:
+
+1. Gửi file (.conf, .mobileconfig) qua Zalo cho bot kèm chú thích: /upmodel
+2. Gõ: /upmodel <link tải file cấu hình>
+3. Mở web upload: https://zalo-link-guard-1.onrender.com/upload
+4. Hoặc gõ /setmodel <link> để cập nhật link cấu hình cho khách sao chép.`);
+        return true;
+      }
+      await reply(message, "⏳ Đang tải file model cấu hình mới...");
+      try {
+        const isConf = targetUrl.toLowerCase().includes(".conf");
+        const filename = isConf ? "locket-model.conf" : "locket-model.mobileconfig";
+        const targetPath = resolve(process.cwd(), "assets", filename);
+        const size = await downloadFileTo(targetUrl, targetPath);
+        state.setModelPath(targetPath);
+        state.setModelUrl("https://zalo-link-guard-1.onrender.com/download/model");
+        await state.flush();
+        await reply(message, `🎉 ĐÃ TẢI VÀ CẬP NHẬT FILE MODEL MỚI THÀNH CÔNG!\n📁 File: ${filename} (${formatBytes(size)})\n👉 Link tải hệ thống: https://zalo-link-guard-1.onrender.com/download/model`);
+      } catch (err) {
+        state.setModelUrl(targetUrl);
+        await state.flush();
+        await reply(message, `⚠️ Không thể tải trực tiếp file (${err.message}).\n✅ Bot đã lưu đường link cấu hình để khách sao chép:\n👉 ${targetUrl}`);
+      }
       return true;
     }
 
@@ -1258,10 +1444,13 @@ export function createModeration({ api, config, state, aiService, log = console 
 - /duyetlocket <UID> : Duyệt đơn, tự động gửi video và file model cho khách.
 - /tuchoilocket <UID> : Từ chối đơn Locket Gold của khách.
 - /dslocket : Xem danh sách đơn Locket Gold đang chờ duyệt.
-- /setmodel <link> : Cập nhật link tải file model cấu hình (hoặc /setmodel default).
-- /xemmodel : Xem link tải và trạng thái file model hiện tại.
-- /setvideo <link> : Cập nhật link xem video hướng dẫn online (hoặc /setvideo default).
-- /xemvideo : Xem link video hiện tại.
+- /upvideo [link] : Tải lên video mới (gửi video kèm /upvideo hoặc dán link).
+- /upload : Lấy link trang web tải lên video & file model từ điện thoại.
+- /upmodel [link] : Tải lên file cấu hình model mới (.conf, .mobileconfig).
+- /setmodel <link> : Cập nhật link cấu hình để khách sao chép (hoặc /setmodel default).
+- /xemmodel : Xem thông tin link cấu hình hiện tại.
+- /setvideo <link> : Cập nhật link video xem online (YouTube, TikTok...).
+- /xemvideo : Xem thông tin video hiện tại.
 - /mute @tag [thời gian] : Cấm chat thành viên (tự động xóa tin tức thì). Ví dụ: /mute @tên 15m
 - /unmute @tag : Gỡ cấm chat cho thành viên.
 - /dsmute : Xem danh sách thành viên đang bị cấm chat trong nhóm.

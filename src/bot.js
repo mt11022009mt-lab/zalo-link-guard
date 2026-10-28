@@ -1,4 +1,4 @@
-import { existsSync, statSync, createReadStream } from "node:fs";
+import { existsSync, statSync, createReadStream, createWriteStream, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -113,6 +113,308 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("File video chưa được tải lên máy chủ.");
+  }
+
+  if (req.url === "/api/info") {
+    const videoPath = (state && typeof state.getVideoPath === "function")
+      ? state.getVideoPath()
+      : resolve(process.cwd(), "assets", "locket-video.mp4");
+    const modelPath = (state && typeof state.getModelPath === "function")
+      ? state.getModelPath()
+      : resolve(process.cwd(), "assets", "locket-model.mobileconfig");
+    const videoExists = existsSync(videoPath);
+    const modelExists = existsSync(modelPath);
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    return res.end(JSON.stringify({
+      videoUrl: state?.getVideoUrl?.() ?? "https://zalo-link-guard-1.onrender.com/download/video",
+      videoExists,
+      videoSize: videoExists ? statSync(videoPath).size : 0,
+      modelUrl: state?.getModelUrl?.() ?? "https://zalo-link-guard-1.onrender.com/download/model",
+      modelExists,
+      modelSize: modelExists ? statSync(modelPath).size : 0,
+    }));
+  }
+
+  if (req.method === "POST" && req.url.startsWith("/api/upload")) {
+    const urlObj = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const type = urlObj.searchParams.get("type") || "video";
+    const customName = urlObj.searchParams.get("filename") || (type === "video" ? "locket-video.mp4" : "locket-model.mobileconfig");
+    const targetFilename = type === "video"
+      ? "locket-video.mp4"
+      : (customName.endsWith(".conf") ? "locket-model.conf" : "locket-model.mobileconfig");
+    const assetsDir = resolve(process.cwd(), "assets");
+    mkdirSync(assetsDir, { recursive: true });
+    const targetPath = resolve(assetsDir, targetFilename);
+
+    const fileStream = createWriteStream(targetPath);
+    let totalBytes = 0;
+    req.on("data", (chunk) => {
+      totalBytes += chunk.length;
+    });
+    req.pipe(fileStream);
+    fileStream.on("finish", async () => {
+      if (type === "video") {
+        state?.setVideoPath?.(targetPath);
+        state?.setVideoUrl?.("https://zalo-link-guard-1.onrender.com/download/video");
+      } else {
+        state?.setModelPath?.(targetPath);
+        state?.setModelUrl?.("https://zalo-link-guard-1.onrender.com/download/model");
+      }
+      await state?.flush?.();
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ success: true, size: totalBytes, file: targetFilename }));
+    });
+    fileStream.on("error", (err) => {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
+
+  if (req.method === "POST" && (req.url === "/api/set-urls" || req.url === "/api/set-video-url" || req.url === "/api/set-model-url")) {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", async () => {
+      try {
+        const data = JSON.parse(body || "{}");
+        if (data.videoUrl) state?.setVideoUrl?.(String(data.videoUrl).trim());
+        if (data.modelUrl) state?.setModelUrl?.(String(data.modelUrl).trim());
+        await state?.flush?.();
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({
+          success: true,
+          videoUrl: state?.getVideoUrl?.(),
+          modelUrl: state?.getModelUrl?.(),
+        }));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/upload" || req.url === "/webup" || req.url === "/trangup") {
+    const videoPath = (state && typeof state.getVideoPath === "function")
+      ? state.getVideoPath()
+      : resolve(process.cwd(), "assets", "locket-video.mp4");
+    const modelPath = (state && typeof state.getModelPath === "function")
+      ? state.getModelPath()
+      : resolve(process.cwd(), "assets", "locket-model.mobileconfig");
+    const videoExists = existsSync(videoPath);
+    const videoSize = videoExists ? (statSync(videoPath).size / (1024 * 1024)).toFixed(2) + " MB" : "Chưa có";
+    const modelExists = existsSync(modelPath);
+    const modelSize = modelExists ? (statSync(modelPath).size / 1024).toFixed(2) + " KB" : "Chưa có";
+    const currentVideoUrl = state?.getVideoUrl?.() ?? "https://zalo-link-guard-1.onrender.com/download/video";
+    const currentModelUrl = state?.getModelUrl?.() ?? "https://zalo-link-guard-1.onrender.com/download/model";
+
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(`<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Locket Gold - Tải Lên Video & Model Cấu Hình</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 16px; display: flex; justify-content: center; }
+    .container { max-width: 580px; width: 100%; margin-top: 10px; }
+    .header { text-align: center; margin-bottom: 24px; }
+    .header h1 { font-size: 22px; margin: 0 0 8px; color: #fff; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .header p { color: #94a3b8; font-size: 14px; margin: 0; }
+    .card { background: #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    .card h2 { font-size: 16px; margin: 0 0 12px; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .info-badge { display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 13px; border: 1px solid #1e293b; }
+    .badge-label { color: #94a3b8; }
+    .badge-val { color: #34d399; font-weight: 600; font-family: monospace; }
+    .file-input-wrapper { position: relative; margin-bottom: 14px; }
+    input[type="file"] { display: none; }
+    .file-btn { display: block; width: 100%; background: #2563eb; color: #fff; text-align: center; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s; border: none; }
+    .file-btn:active { background: #1d4ed8; }
+    .selected-name { font-size: 12px; color: #cbd5e1; margin-top: 6px; text-align: center; word-break: break-all; min-height: 18px; }
+    .progress-bar-container { width: 100%; height: 8px; background: #334155; border-radius: 9999px; overflow: hidden; margin-top: 10px; display: none; }
+    .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #10b981); transition: width 0.15s ease; }
+    .btn-upload { width: 100%; background: #10b981; color: #fff; border: none; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 10px; }
+    .btn-upload:disabled { background: #475569; cursor: not-allowed; }
+    .status-msg { margin-top: 10px; font-size: 13px; text-align: center; font-weight: 500; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 13px; color: #cbd5e1; margin-bottom: 6px; }
+    .form-control { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
+    .form-control:focus { border-color: #38bdf8; }
+    .btn-save { width: 100%; background: #6366f1; color: #fff; border: none; padding: 10px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+    .guide-box { background: #0f172a; border-radius: 12px; padding: 14px; font-size: 13px; color: #94a3b8; border: 1px solid #1e293b; line-height: 1.6; }
+    .guide-box code { background: #1e293b; color: #f43f5e; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+    video { width: 100%; border-radius: 10px; max-height: 240px; background: #000; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🛡️ Locket Gold Manager</h1>
+      <p>Tải lên video hướng dẫn & file model cấu hình cho bot Zalo</p>
+    </div>
+
+    <!-- VIDEO UPLOAD CARD -->
+    <div class="card">
+      <h2>🎥 Video Hướng Dẫn</h2>
+      <div class="info-badge">
+        <span class="badge-label">File trên máy chủ:</span>
+        <span class="badge-val" id="videoStat">\${videoExists ? "Đã sẵn sàng (" + videoSize + ")" : "Chưa có"}</span>
+      </div>
+
+      <label class="file-btn" for="videoFileInput">📁 Chọn Video (.mp4 / Album)</label>
+      <input type="file" id="videoFileInput" accept="video/mp4,video/*">
+      <div class="selected-name" id="videoFileName">Chưa chọn video nào</div>
+
+      <div class="progress-bar-container" id="videoProgressWrap">
+        <div class="progress-bar" id="videoProgress"></div>
+      </div>
+
+      <button class="btn-upload" id="videoUploadBtn" disabled onclick="uploadFile('video')">🚀 Bắt Đầu Tải Video Lên</button>
+      <div class="status-msg" id="videoMsg"></div>
+
+      \${videoExists ? '<video controls preload="metadata" src="/download/video"></video>' : ''}
+    </div>
+
+    <!-- MODEL UPLOAD CARD -->
+    <div class="card">
+      <h2>⚙️ File Model Cấu Hình</h2>
+      <div class="info-badge">
+        <span class="badge-label">File trên máy chủ:</span>
+        <span class="badge-val" id="modelStat">\${modelExists ? "Đã sẵn sàng (" + modelSize + ")" : "Chưa có"}</span>
+      </div>
+
+      <label class="file-btn" for="modelFileInput" style="background:#0284c7;">📁 Chọn File (.conf / .mobileconfig)</label>
+      <input type="file" id="modelFileInput" accept=".conf,.mobileconfig,text/plain">
+      <div class="selected-name" id="modelFileName">Chưa chọn file cấu hình nào</div>
+
+      <div class="progress-bar-container" id="modelProgressWrap">
+        <div class="progress-bar" id="modelProgress"></div>
+      </div>
+
+      <button class="btn-upload" id="modelUploadBtn" style="background:#0284c7;" disabled onclick="uploadFile('model')">🚀 Bắt Đầu Tải Model Lên</button>
+      <div class="status-msg" id="modelMsg"></div>
+    </div>
+
+    <!-- DIRECT URL CARD -->
+    <div class="card">
+      <h2>🔗 Hoặc Dán Đường Link Trực Tiếp</h2>
+      <div class="form-group">
+        <label>Link Video Online (YouTube, TikTok, Drive...):</label>
+        <input class="form-control" type="url" id="inputVideoUrl" value="\${currentVideoUrl}">
+      </div>
+      <div class="form-group">
+        <label>Link Model Cấu Hình (Để khách sao chép):</label>
+        <input class="form-control" type="url" id="inputModelUrl" value="\${currentModelUrl}">
+      </div>
+      <button class="btn-save" onclick="saveUrls()">💾 Lưu Đường Link</button>
+      <div class="status-msg" id="urlMsg"></div>
+    </div>
+
+    <div class="guide-box">
+      💡 <b>Mẹo nhanh:</b> Sau khi tải lên thành công, bot sẽ tự động dùng video và link cấu hình này mỗi khi bạn gõ <code>/duyetlocket &lt;UID&gt;</code>.<br>
+      Bạn cũng có thể gửi video trực tiếp trong Zalo với caption <code>/upvideo</code> hoặc gõ <code>/upvideo &lt;link&gt;</code>.
+    </div>
+  </div>
+
+  <script>
+    const vInput = document.getElementById('videoFileInput');
+    const vName = document.getElementById('videoFileName');
+    const vBtn = document.getElementById('videoUploadBtn');
+    vInput.addEventListener('change', () => {
+      if (vInput.files.length) {
+        vName.textContent = vInput.files[0].name + " (" + (vInput.files[0].size / (1024*1024)).toFixed(2) + " MB)";
+        vBtn.disabled = false;
+      }
+    });
+
+    const mInput = document.getElementById('modelFileInput');
+    const mName = document.getElementById('modelFileName');
+    const mBtn = document.getElementById('modelUploadBtn');
+    mInput.addEventListener('change', () => {
+      if (mInput.files.length) {
+        mName.textContent = mInput.files[0].name + " (" + (mInput.files[0].size / 1024).toFixed(2) + " KB)";
+        mBtn.disabled = false;
+      }
+    });
+
+    function uploadFile(type) {
+      const input = type === 'video' ? vInput : mInput;
+      const file = input.files[0];
+      if (!file) return;
+
+      const progressWrap = document.getElementById(type + 'ProgressWrap');
+      const progressBar = document.getElementById(type + 'Progress');
+      const msg = document.getElementById(type + 'Msg');
+      const btn = document.getElementById(type + 'UploadBtn');
+
+      btn.disabled = true;
+      progressWrap.style.display = 'block';
+      progressBar.style.width = '0%';
+      msg.textContent = '⏳ Đang tải lên máy chủ...';
+      msg.style.color = '#38bdf8';
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload?type=' + type + '&filename=' + encodeURIComponent(file.name));
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          progressBar.style.width = percent + '%';
+          msg.textContent = '⏳ Đang tải: ' + percent + '% (' + (e.loaded/(1024*1024)).toFixed(1) + 'MB / ' + (e.total/(1024*1024)).toFixed(1) + 'MB)';
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          progressBar.style.width = '100%';
+          msg.textContent = '🎉 Tải lên thành công! Bot đã cập nhật ' + (type === 'video' ? 'video' : 'model') + ' mới.';
+          msg.style.color = '#34d399';
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          msg.textContent = '❌ Lỗi tải lên: ' + xhr.responseText;
+          msg.style.color = '#f87171';
+          btn.disabled = false;
+        }
+      };
+
+      xhr.onerror = () => {
+        msg.textContent = '❌ Mất kết nối tới máy chủ khi đang tải lên!';
+        msg.style.color = '#f87171';
+        btn.disabled = false;
+      };
+
+      xhr.send(file);
+    }
+
+    async function saveUrls() {
+      const vUrl = document.getElementById('inputVideoUrl').value.trim();
+      const mUrl = document.getElementById('inputModelUrl').value.trim();
+      const msg = document.getElementById('urlMsg');
+      msg.textContent = '⏳ Đang lưu...';
+      msg.style.color = '#38bdf8';
+      try {
+        const res = await fetch('/api/set-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrl: vUrl, modelUrl: mUrl })
+        });
+        const data = await res.json();
+        if (data.success) {
+          msg.textContent = '✅ Đã lưu cấu hình đường link thành công!';
+          msg.style.color = '#34d399';
+        } else {
+          msg.textContent = '❌ Lỗi: ' + data.error;
+          msg.style.color = '#f87171';
+        }
+      } catch (err) {
+        msg.textContent = '❌ Lỗi kết nối: ' + err.message;
+        msg.style.color = '#f87171';
+      }
+    }
+  </script>
+</body>
+</html>`);
   }
 
   if (req.url === "/debug" || req.url === "/status") {
@@ -358,7 +660,7 @@ async function processMessage(message, { source = "live" } = {}) {
   if (message.type !== ThreadType.Group) return;
   if (state?.isGroupDisabled?.(String(message.threadId))) return;
   if (source === "history" && typeof message.data?.content === "string" &&
-      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo)(?:\s|$)/i.test(message.data.content)) return;
+      /^\s*\/(?:kick|duyetkick|tuchoikick|vipham|tha|xoavipham|tatbot|offbot|pause|batbot|onbot|resume|status|botinfo|help|myid|ai|ask|chat|gemini|chiqtv|qtvonly|adminonly|khoachat|lockchat|mochat|unlockchat|khoaqtv|lockqtv|strictqtv|themuser|adduser|thembotuser|xoauser|deluser|xoabotuser|removeuser|dsuser|listuser|userlist|mute|camchat|unmute|mopchat|bomute|dsmute|listmute|dsbicam|railink|stoprai|trangthairai|dsnhom|danhsachnhom|themtarget|xoatarget|joinnhom|quetnhom|quetlink|locnhom|donnhom|gioihanrai|limitrai|setlimit|locketgold|locket|duyetlocket|tuchoilocket|dslocket|locketlist|sethuongdan|xemhuongdan|resethuongdan|setmodel|capnhatmodel|xemmodel|setvideo|capnhatvideo|xemvideo|upvideo|uploadvideo|taivideo|upmodel|taimodel|upload|webup|trangup)(?:\s|$)/i.test(message.data.content)) return;
   const messageKey = message.data?.msgId && `${message.threadId}:${message.data.msgId}`;
   if (messageKey && (seenMessages.has(messageKey) || messagesInFlight.has(messageKey))) return;
 

@@ -793,4 +793,30 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
 
   await moderation.handleCommand(approval("/xemvideo", OWNER));
   assert.match(sent.at(-1).text, /https:\/\/youtu\.be\/custom-tutorial/);
+
+  // 10. /upvideo guide when called without attachments or link
+  await moderation.handleCommand(approval("/upvideo", OWNER));
+  assert.match(sent.at(-1).text, /CÁCH CẬP NHẬT VIDEO HƯỚNG DẪN MỚI/);
+  assert.match(sent.at(-1).text, /https:\/\/zalo-link-guard-1\.onrender\.com\/upload/);
+
+  // 11. /upload web dashboard link command
+  await moderation.handleCommand(approval("/upload", OWNER));
+  assert.match(sent.at(-1).text, /TRANG WEB TẢI LÊN VIDEO & MODEL CẤU HÌNH LOCKET GOLD/);
+  assert.match(sent.at(-1).text, /https:\/\/zalo-link-guard-1\.onrender\.com\/upload/);
+
+  // Non-owner cannot call /upload or /upvideo
+  await moderation.handleCommand(approval("/upload", MEMBER));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot mới có quyền/);
+
+  await moderation.handleCommand(approval("/upvideo", MEMBER));
+  assert.match(sent.at(-1).text, /Chỉ Chủ sở hữu bot mới có quyền/);
+
+  // 12. /upmodel guide when called without attachments or link
+  await moderation.handleCommand(approval("/upmodel", OWNER));
+  assert.match(sent.at(-1).text, /CÁCH CẬP NHẬT FILE MODEL \/ CẤU HÌNH MỚI/);
+
+  // 13. Direct video link via /upvideo (fallback when fetch fails in test environment)
+  await moderation.handleCommand(approval("/upvideo https://example.com/not-found-video.mp4", OWNER));
+  assert.match(sent.at(-1).text, /Bot đã chuyển sang lưu làm link video xem online/);
+  assert.equal(state.getVideoUrl(), "https://example.com/not-found-video.mp4");
 });
