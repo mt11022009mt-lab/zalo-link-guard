@@ -747,7 +747,8 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
   assert.ok(customerDM, "Customer should receive DM guide");
   const rawText = customerDM.text || customerDM.msg;
   const dmContent = typeof rawText === "object" ? (rawText.msg || "") : String(rawText || "");
-  assert.match(dmContent, /Link tải file Model cấu hình/);
+  assert.match(dmContent, /Link cấu hình/);
+  assert.match(dmContent, /SAO CHÉP link cấu hình/);
   assert.match(dmContent, /làm theo từng bước là được nhé/);
   if (typeof rawText === "object" && rawText.attachments) {
     assert.ok(rawText.attachments.length > 0, "Should attach the video file");
@@ -774,7 +775,7 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
 
   // 8. Customizing model file link: /setmodel, /xemmodel
   await moderation.handleCommand(approval("/setmodel https://drive.google.com/test-model.conf", OWNER));
-  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT FILE MODEL \/ LINK TẢI THÀNH CÔNG/);
+  assert.match(sent.at(-1).text, /ĐÃ CẬP NHẬT LINK CẤU HÌNH THÀNH CÔNG/);
   assert.equal(state.getModelUrl(), "https://drive.google.com/test-model.conf");
 
   await moderation.handleCommand(approval("/xemmodel", OWNER));
@@ -782,7 +783,7 @@ test("locket gold workflow: customer registration, admin approval, rejection, an
 
   // Reset model to default
   await moderation.handleCommand(approval("/setmodel default", OWNER));
-  assert.match(sent.at(-1).text, /ĐÃ ĐẶT LẠI LINK FILE MODEL VỀ MẶC ĐỊNH/);
+  assert.match(sent.at(-1).text, /ĐÃ ĐẶT LẠI LINK CẤU HÌNH VỀ MẶC ĐỊNH/);
   assert.equal(state.getModelUrl(), "https://zalo-link-guard-1.onrender.com/download/model");
 
   // 9. Customizing video link: /setvideo, /xemvideo

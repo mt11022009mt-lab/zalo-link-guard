@@ -384,13 +384,14 @@ export function createModeration({ api, config, state, aiService, log = console 
       if (orderResult && !orderResult.isNew && orderResult.order?.status === "approved") {
         replyMsg = `💛 CHÀO BẠN! TÀI KHOẢN CỦA BẠN ĐÃ ĐƯỢC DUYỆT LOCKET GOLD TRƯỚC ĐÓ 💛\n\n` +
           `👉 Mã UID Zalo của bạn: ${senderId}\n\n` +
-          `📩 Bot sẽ gửi lại file model và video hướng dẫn qua tin nhắn riêng (DM) cho bạn ngay bây giờ nhé!`;
+          `📩 Bot sẽ gửi lại link cấu hình và video hướng dẫn qua tin nhắn riêng (DM) cho bạn ngay bây giờ nhé!`;
         const modelUrl = state?.getModelUrl?.() || "https://zalo-link-guard-1.onrender.com/download/model";
         const videoUrl = state?.getVideoUrl?.() || "https://zalo-link-guard-1.onrender.com/download/video";
         const videoPath = state?.getVideoPath?.();
-        const customerMsg = `💛 ĐÂY LÀ FILE MODEL VÀ VIDEO HƯỚNG DẪN LOCKET GOLD CỦA BẠN: 💛\n\n` +
-          `📥 Link tải file Model cấu hình:\n👉 ${modelUrl}\n\n` +
-          `🎬 Bạn tải file model ở trên về, sau đó xem video và làm theo từng bước là được nhé!\n\n` +
+        const customerMsg = `💛 ĐÂY LÀ LINK CẤU HÌNH VÀ VIDEO HƯỚNG DẪN CỦA BẠN: 💛\n\n` +
+          `🔗 Link cấu hình (Model / Config):\n👉 ${modelUrl}\n` +
+          `(📌 Bạn chỉ cần bấm SAO CHÉP link cấu hình ở trên, không cần tải về máy nhé!)\n\n` +
+          `🎬 Bạn mở video lên rồi làm theo từng bước là được nhé!\n\n` +
           `✨ Chúc bạn có trải nghiệm tuyệt vời! Nếu cần hỗ trợ thêm, hãy nhắn tin trực tiếp cho Shop nhé!`;
 
         let dmSent = false;
@@ -415,7 +416,7 @@ export function createModeration({ api, config, state, aiService, log = console 
           `👉 Mã UID Zalo của bạn là: ${senderId}\n\n` +
           `📌 HƯỚNG DẪN TIẾP THEO:\n` +
           `1. Hãy copy mã UID ở trên gửi cho Shop/Admin để được duyệt đơn nhé!\n` +
-          `2. Ngay sau khi Shop duyệt, bot sẽ TỰ ĐỘNG gửi file model và video hướng dẫn chi tiết qua tin nhắn riêng cho bạn.\n\n` +
+          `2. Ngay sau khi Shop duyệt, bot sẽ TỰ ĐỘNG gửi link cấu hình (để sao chép) và video hướng dẫn chi tiết qua tin nhắn riêng cho bạn.\n\n` +
           `⏳ Yêu cầu của bạn đã được ghi nhận vào hệ thống chờ duyệt. Chúc bạn một ngày tốt lành!`;
       }
       await reply(message, replyMsg);
@@ -1046,9 +1047,10 @@ export function createModeration({ api, config, state, aiService, log = console 
       const videoPath = state.getVideoPath ? state.getVideoPath() : null;
 
       const customerMsg = `💛 ĐƠN LOCKET GOLD CỦA BẠN ĐÃ ĐƯỢC DUYỆT THÀNH CÔNG! 💛\n\n` +
-        `📥 Link tải file Model cấu hình:\n👉 ${modelUrl}\n\n` +
+        `🔗 Link cấu hình (Model / Config):\n👉 ${modelUrl}\n` +
+        `(📌 Bạn chỉ cần bấm SAO CHÉP link cấu hình ở trên, không cần tải về máy nhé!)\n\n` +
         `🎬 Video hướng dẫn chi tiết đã được gửi kèm bên dưới.\n` +
-        `👉 Bạn chỉ cần tải file model ở trên về, sau đó mở video và làm theo từng bước là được nhé! Rất nhanh và đơn giản.\n\n` +
+        `👉 Bạn mở video lên rồi làm theo từng bước là được nhé! Rất nhanh và đơn giản.\n\n` +
         `✨ Chúc bạn có trải nghiệm tuyệt vời! Nếu gặp khó khăn bước nào, hãy nhắn tin trực tiếp cho Shop để được hỗ trợ nhé!`;
 
       let dmSent = false;
@@ -1081,7 +1083,7 @@ export function createModeration({ api, config, state, aiService, log = console 
       }
 
       if (dmSent) {
-        await reply(message, `🎉 ĐÃ DUYỆT THÀNH CÔNG ĐƠN LOCKET GOLD!\n👤 Khách hàng UID: ${targetId}\n📩 Bot đã tự động gửi video và file model qua tin nhắn riêng (DM) cho khách.`);
+        await reply(message, `🎉 ĐÃ DUYỆT THÀNH CÔNG ĐƠN LOCKET GOLD!\n👤 Khách hàng UID: ${targetId}\n📩 Bot đã tự động gửi video và link cấu hình (hướng dẫn khách sao chép link) qua tin nhắn riêng (DM) cho khách.`);
       } else {
         await reply(message, `⚠️ ĐÃ DUYỆT ĐƠN CHO KHÁCH HÀNG: ${targetId}\n❌ TUY NHIÊN KHÔNG THỂ GỬI TIN NHẮN RIÊNG (DM) CHO KHÁCH:\nLý do: ${dmError}\n👉 Khách hàng có thể đang chặn tin nhắn từ người lạ. Vui lòng kết bạn hoặc gửi thủ công cho khách nhé!`);
       }
@@ -1090,7 +1092,7 @@ export function createModeration({ api, config, state, aiService, log = console 
 
     if (["setmodel", "capnhatmodel"].includes(command)) {
       if (!isOperator && !state?.isUserAllowed?.(senderId)) {
-        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật file model.");
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền cập nhật link cấu hình.");
         return true;
       }
       let newLink = text.replace(/^\/(?:setmodel|capnhatmodel)\s*/i, "").trim();
@@ -1101,32 +1103,30 @@ export function createModeration({ api, config, state, aiService, log = console 
       }
 
       if (!newLink) {
-        await reply(message, `💡 Cú pháp: /setmodel <Link tải file model>\nVí dụ: /setmodel https://drive.google.com/...\n👉 Hoặc gõ: /setmodel default để dùng link tải mặc định của hệ thống (${state.getModelUrl()}).`);
+        await reply(message, `💡 Cú pháp: /setmodel <Link cấu hình>\nVí dụ: /setmodel https://example.com/10in1.conf\n👉 Hoặc gõ: /setmodel default để dùng link cấu hình mặc định (${state.getModelUrl()}).`);
         return true;
       }
 
       if (newLink.toLowerCase() === "default" || newLink.toLowerCase() === "reset") {
         state.setModelUrl("https://zalo-link-guard-1.onrender.com/download/model");
         await state.flush();
-        await reply(message, "🔄 ĐÃ ĐẶT LẠI LINK FILE MODEL VỀ MẶC ĐỊNH HỆ THỐNG:\n👉 https://zalo-link-guard-1.onrender.com/download/model");
+        await reply(message, "🔄 ĐÃ ĐẶT LẠI LINK CẤU HÌNH VỀ MẶC ĐỊNH HỆ THỐNG:\n👉 https://zalo-link-guard-1.onrender.com/download/model");
         return true;
       }
 
       state.setModelUrl(newLink);
       await state.flush();
-      await reply(message, `✅ ĐÃ CẬP NHẬT FILE MODEL / LINK TẢI THÀNH CÔNG!\n👉 Link tải mới: ${newLink}\n\nKhi bạn duyệt đơn bằng lệnh /duyetlocket, bot sẽ tự động gửi link này kèm video cho khách hàng.`);
+      await reply(message, `✅ ĐÃ CẬP NHẬT LINK CẤU HÌNH THÀNH CÔNG!\n👉 Link cấu hình mới: ${newLink}\n\nKhi bạn duyệt đơn bằng lệnh /duyetlocket, bot sẽ tự động gửi link này kèm video và hướng dẫn khách bấm sao chép link.`);
       return true;
     }
 
     if (command === "xemmodel") {
       if (!isOperator && !state?.isUserAllowed?.(senderId)) {
-        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem thông tin model.");
+        await reply(message, "⛔ Chỉ Chủ sở hữu bot mới có quyền xem thông tin cấu hình.");
         return true;
       }
       const modelUrl = state.getModelUrl ? state.getModelUrl() : "https://zalo-link-guard-1.onrender.com/download/model";
-      const modelPath = state.getModelPath ? state.getModelPath() : "";
-      const exists = modelPath && existsSync(modelPath);
-      await reply(message, `📥 THÔNG TIN FILE MODEL CẤU HÌNH LOCKET GOLD:\n- Link tải gửi cho khách: ${modelUrl}\n- File cục bộ trên máy chủ: ${modelPath} (${exists ? "✅ Có sẵn" : "❌ Chưa có"})\n\n👉 Dùng /setmodel <link> để cập nhật link tải mới.`);
+      await reply(message, `🔗 THÔNG TIN LINK CẤU HÌNH LOCKET GOLD:\n- Link cấu hình gửi cho khách sao chép: ${modelUrl}\n\n👉 Dùng /setmodel <link> để cập nhật link cấu hình mới.`);
       return true;
     }
 
