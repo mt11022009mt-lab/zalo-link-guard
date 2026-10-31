@@ -1,4 +1,5 @@
-import { chmod, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, readFile, unlink, writeFile } from "node:fs/promises";
 import { LoginQRCallbackEventType } from "zca-js";
 
 export function parseSessionJson(raw) {
@@ -39,6 +40,18 @@ export async function loginWithSession({ zalo, sessionJson, qrPath, sessionPath,
 
   if (isRender) {
     throw new Error("Thiếu SESSION_JSON trên Render. Quét QR trên máy cá nhân để tạo zalo-session.json, rồi thêm nội dung file vào biến môi trường SESSION_JSON.");
+  }
+
+  if (sessionPath && existsSync(sessionPath)) {
+    try {
+      const raw = await readFile(sessionPath, "utf8");
+      const credentials = parseSessionJson(raw);
+      const api = await zalo.login(credentials);
+      log.info(`Đã đăng nhập tự động bằng file phiên ${sessionPath}.`);
+      return api;
+    } catch {
+      log.warn("Phiên đăng nhập cũ trong file đã hết hạn hoặc không hợp lệ. Đang tạo mã QR mới...");
+    }
   }
 
   let qrCredentials;
