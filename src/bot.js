@@ -45,6 +45,9 @@ let botStatus = "đang_khởi_động";
 let botError = null;
 let lastMessageTime = null;
 
+const seenMessages = new Map();
+const messagesInFlight = new Set();
+
 // Khởi chạy HTTP Server để Render không bị timeout port scan và UptimeRobot ping 24/7
 const PORT = Number(process.env.PORT) || 3000;
 const server = createServer(async (req, res) => {
@@ -645,8 +648,6 @@ async function syncProtectedGroups() {
 }
 void syncProtectedGroups();
 
-const seenMessages = new Map();
-const messagesInFlight = new Set();
 function markSeen(messageKey) {
   if (!messageKey) return;
   seenMessages.set(messageKey, Date.now());

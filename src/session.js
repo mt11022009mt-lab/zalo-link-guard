@@ -4,10 +4,28 @@ import { LoginQRCallbackEventType } from "zca-js";
 
 export function parseSessionJson(raw) {
   let session;
+  if (!raw || typeof raw !== "string") {
+    throw new Error("SESSION_JSON không phải JSON hợp lệ.");
+  }
+  const trimmed = raw.trim();
+  let toParse = trimmed;
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf8");
+      if (decoded.startsWith("{") || decoded.startsWith("[")) {
+        toParse = decoded;
+      }
+    } catch {}
+  }
+
   try {
-    session = JSON.parse(raw);
+    session = JSON.parse(toParse);
   } catch {
     throw new Error("SESSION_JSON không phải JSON hợp lệ.");
+  }
+
+  if (Array.isArray(session) && session.some((item) => item?.domain?.includes("facebook.com") || item?.name === "c_user")) {
+    throw new Error("Bạn đang dán nhầm Cookie của Facebook vào Bot Zalo! Hãy dùng đúng chuỗi session của Zalo.");
   }
   const cookies = Array.isArray(session?.cookie) ? session.cookie : session?.cookie?.cookies;
   if (typeof session?.imei !== "string" || !session.imei.trim() ||
